@@ -8,6 +8,7 @@ import {
   EmbedBuilder,
   ChannelType,
   PermissionFlagsBits,
+  ChannelSelectMenuBuilder,
   StringSelectMenuBuilder,
 } from 'discord.js';
 import { FollowerStock } from '../db/models/FollowerStock.js';
@@ -16,7 +17,6 @@ import {
   buildStockEmbed,
   parseAmount,
   formatAmount,
-  parseColor,
 } from '../utils/followerStockHelpers.js';
 
 const activePanels = new Map();
@@ -243,16 +243,12 @@ async function showPreview(interaction, stockDoc) {
  * Send the stock embed to a channel (with channel selection).
  */
 async function sendStockEmbed(interaction, stockDoc) {
-  // Show channel select menu
-  const select = new StringSelectMenuBuilder()
+  const select = new ChannelSelectMenuBuilder()
     .setCustomId('follower_select_channel')
     .setPlaceholder('Select a channel for the stock embed')
-    .addChannels(
-      interaction.guild.channels.cache
-        .filter((ch) => ch.type === ChannelType.GuildText && ch.viewable)
-        .first(25)
-        .map((ch) => ({ label: ch.name, value: ch.id })),
-    );
+    .setChannelTypes(ChannelType.GuildText)
+    .setMinValues(1)
+    .setMaxValues(1);
 
   const row = new ActionRowBuilder().addComponents(select);
   await interaction.reply({ content: 'Select a channel to send the stock embed:', components: [row], ephemeral: true });
@@ -375,7 +371,7 @@ export async function handleFollowerModal(interaction) {
 }
 
 /**
- * Handle string select menu interactions (channel selection).
+ * Handle string/channel select menu interactions (channel selection).
  */
 export async function handleFollowerSelect(interaction) {
   if (interaction.customId !== 'follower_select_channel') return;
