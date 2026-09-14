@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { FollowerStock } from '../db/models/FollowerStock.js';
 import { formatAmount } from '../utils/followerStockHelpers.js';
