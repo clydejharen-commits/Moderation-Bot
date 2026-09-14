@@ -1,3 +1,5 @@
+import { EmbedBuilder } from 'discord.js';
+
 /**
  * Utilities for the Followers Stock System.
  */
@@ -78,7 +80,6 @@ export function parseColor(input) {
  * @returns {import('discord.js').EmbedBuilder}
  */
 export function buildStockEmbed(stockDoc) {
-  const { EmbedBuilder } = require('discord.js');
   const status = getStockStatus(stockDoc.currentStock);
   const cfg = stockDoc.embedConfig || {};
 
@@ -97,46 +98,4 @@ export function buildStockEmbed(stockDoc) {
   }
 
   return embed;
-}
-
-/**
- * Get the next reset time in milliseconds (8:00 AM UTC+8).
- * @param {Date} now
- * @returns {number} ms until next reset
- */
-export function msUntilNextReset(now = new Date()) {
-  // UTC+8 is UTC+8 hours
-  const RESET_HOUR_UTC = 8; // 8:00 AM UTC+8 = 0:00 AM UTC
-
-  // Get current UTC time
-  const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
-
-  // Target: 0:00 AM UTC (= 8:00 AM UTC+8)
-  const target = new Date(utcNow);
-  target.setUTCHours(0, 0, 0, 0);
-
-  // If it's already past midnight UTC, target tomorrow
-  if (utcNow.getTime() >= target.getTime()) {
-    target.setUTCDate(target.getUTCDate() + 1);
-  }
-
-  return target.getTime() - utcNow.getTime();
-}
-
-/**
- * Get today's date string in UTC (used for deduplicating daily resets).
- * @returns {string} YYYY-MM-DD
- */
-export function getTodayDateUTC() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/**
- * Check if a reset is needed (was missed while offline).
- * @param {string|null} lastResetDate
- * @returns {boolean}
- */
-export function needsReset(lastResetDate) {
-  const today = getTodayDateUTC();
-  return lastResetDate !== today;
 }
