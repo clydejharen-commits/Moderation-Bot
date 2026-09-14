@@ -9,10 +9,8 @@ import {
   ChannelType,
   PermissionFlagsBits,
   ChannelSelectMenuBuilder,
-  StringSelectMenuBuilder,
 } from 'discord.js';
 import { FollowerStock } from '../db/models/FollowerStock.js';
-import { isDatabaseConnected } from '../db/database.js';
 import {
   buildStockEmbed,
   parseAmount,
@@ -371,7 +369,7 @@ export async function handleFollowerModal(interaction) {
 }
 
 /**
- * Handle string/channel select menu interactions (channel selection).
+ * Handle channel select menu interactions (channel selection).
  */
 export async function handleFollowerSelect(interaction) {
   if (interaction.customId !== 'follower_select_channel') return;
