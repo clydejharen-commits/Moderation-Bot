@@ -1,7 +1,7 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { FollowerStock } from '../db/models/FollowerStock.js';
-import { parseAmount, formatAmount, getStockStatus, formatLastUpdated, buildStockEmbed } from '../utils/followerStockHelpers.js';
+import { parseAmount, formatAmount, buildStockEmbed } from '../utils/followerStockHelpers.js';
 import { showDeleteConfirmation } from '../components/follower-panel.js';
 
 const PREFIX = 'R!';
