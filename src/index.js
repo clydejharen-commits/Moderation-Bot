@@ -15,6 +15,16 @@ import { data as embedData, execute as embedExecute } from './commands/embed.js'
 import { data as controlData, execute as controlExecute } from './commands/control.js';
 import { data as avatarData, execute as avatarExecute } from './commands/avatar.js';
 import { data as bannerData, execute as bannerExecute } from './commands/banner.js';
+import { data as followerData, execute as followerExecute } from './commands/follower.js';
+import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './commands/follower-prefix.js';
+import {
+  handleFollowerButton,
+  handleFollowerModal,
+  handleFollowerSelect,
+  isFollowerButton,
+  isFollowerModal,
+  isFollowerSelect,
+} from './components/follower-panel.js';
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 
@@ -45,6 +55,7 @@ const slashCommands = [
   controlData,
   avatarData,
   bannerData,
+  followerData,
 ];
 
 const commandMap = new Map();
@@ -64,19 +75,24 @@ for (const cmd of slashCommands) {
     control: controlExecute,
     avatar: avatarExecute,
     banner: bannerExecute,
+    follower: followerExecute,
   }[cmd.name]);
 }
 
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`✅ Bot online as ${readyClient.user.tag}`);
+  console.log(`\u2705 Bot online as ${readyClient.user.tag}`);
 
   // Register slash commands globally
   try {
     await readyClient.application.commands.set(slashCommands);
-    console.log('✅ Slash commands registered globally.');
+    console.log('\u2705 Slash commands registered globally.');
   } catch (err) {
     console.error('[COMMAND REGISTER ERROR]', err.message);
   }
+
+  // Check for missed daily resets and schedule the timer
+  await runDailyReset(readyClient);
+  scheduleDailyReset(readyClient);
 });
 
 // Handle prefix commands (R!setup) and setup conversation responses
@@ -95,6 +111,10 @@ client.on(Events.MessageCreate, async (message) => {
 
     // Handle R! prefix commands
     if (message.content.startsWith('R!')) {
+      // Follower stock prefix commands (R!take, R!add, R!stock delete)
+      const handled = await handleFollowerPrefix(message);
+      if (handled) return;
+
       const content = message.content.slice(2).trim().toLowerCase();
 
       // R!setup (existing moderation setup)
@@ -105,7 +125,7 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// Handle slash command, button, and modal interactions
+// Handle slash command, button, modal, and select menu interactions
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     // Slash commands
@@ -122,6 +142,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // Button interactions
     if (interaction.isButton()) {
+      if (isFollowerButton(interaction.customId)) {
+        await handleFollowerButton(interaction);
+        return;
+      }
       if (isControlButton(interaction.customId)) {
         await handleControlButton(interaction);
         return;
@@ -130,8 +154,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // Modal submissions
     if (interaction.isModalSubmit()) {
+      if (isFollowerModal(interaction.customId)) {
+        await handleFollowerModal(interaction);
+        return;
+      }
       if (isControlModal(interaction.customId)) {
         await handleControlModal(interaction);
+        return;
+      }
+    }
+
+    // String select menu interactions
+    if (interaction.isStringSelectMenu()) {
+      if (isFollowerSelect(interaction.customId)) {
+        await handleFollowerSelect(interaction);
         return;
       }
     }
@@ -140,9 +176,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.isRepliable()) {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: '❌ Something went wrong.', ephemeral: true });
+          await interaction.followUp({ content: '\u274C Something went wrong.', ephemeral: true });
         } else {
-          await interaction.reply({ content: '❌ Something went wrong.', ephemeral: true });
+          await interaction.reply({ content: '\u274C Something went wrong.', ephemeral: true });
         }
       }
     } catch {
@@ -164,7 +200,7 @@ process.on('SIGTERM', async () => {
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('❌ DISCORD_TOKEN is not set in the environment. Add it to your .env file.');
+  console.error('\u274C DISCORD_TOKEN is not set in the environment. Add it to your .env file.');
   process.exit(1);
 }
 
