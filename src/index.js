@@ -164,8 +164,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
 
-    // String select menu interactions
-    if (interaction.isStringSelectMenu()) {
+    // Select menu interactions (string and channel select menus)
+    if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu()) {
       if (isFollowerSelect(interaction.customId)) {
         await handleFollowerSelect(interaction);
         return;
