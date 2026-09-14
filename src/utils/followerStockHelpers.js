@@ -83,11 +83,15 @@ export function buildStockEmbed(stockDoc) {
   const status = getStockStatus(stockDoc.currentStock);
   const cfg = stockDoc.embedConfig || {};
 
+  const stockInfo = `${status.emoji} **Status:** ${status.label}\n\u{1F465} **Available:** ${formatAmount(stockDoc.currentStock)} Followers\n\u{1F550} **Last Updated:** ${formatLastUpdated(stockDoc.lastUpdated)}`;
+
+  const description = cfg.description && cfg.description.trim()
+    ? `${cfg.description.trim()}\n\n${stockInfo}`
+    : stockInfo;
+
   const embed = new EmbedBuilder()
     .setTitle(cfg.title || 'Roblox Followers Stock')
-    .setDescription(
-      `${status.emoji} **Status:** ${status.label}\n\u{1F465} **Available:** ${formatAmount(stockDoc.currentStock)} Followers\n\u{1F550} **Last Updated:** ${formatLastUpdated(stockDoc.lastUpdated)}`,
-    )
+    .setDescription(description)
     .setColor(parseColor(cfg.color));
 
   if (cfg.image && cfg.image.trim()) {
