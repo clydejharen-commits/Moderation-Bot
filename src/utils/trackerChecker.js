@@ -1,10 +1,46 @@
 import { RobloxTracker } from '../db/models/RobloxTracker.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { getFollowerCount } from './robloxApi.js';
+import { buildTrackerEmbed, buildTrackerComponents } from './trackerEmbed.js';
 
 const CHECK_INTERVAL_MS = 60_000; // 1 minute
 let checkTimer = null;
 let isChecking = false;
+
+/**
+ * Try to edit the tracker embed in the configured channel.
+ * If the message was deleted, silently skip — do NOT create a new message.
+ * @param {import('discord.js').Client} client
+ * @param {import('mongoose').Document} tracker
+ * @param {boolean} completed
+ */
+async function updateTrackerEmbed(client, tracker, completed = false) {
+  if (!tracker.channelId || !tracker.messageId) return;
+
+  const guild = client.guilds.cache.get(tracker.guildId);
+  if (!guild) return;
+
+  const channel = guild.channels.cache.get(tracker.channelId);
+  if (!channel) return;
+
+  let message;
+  try {
+    message = await channel.messages.fetch(tracker.messageId).catch(() => null);
+  } catch {
+    message = null;
+  }
+
+  if (!message) return;
+
+  const embed = buildTrackerEmbed(tracker, completed);
+  const components = buildTrackerComponents(tracker.robloxUserId);
+
+  try {
+    await message.edit({ embeds: [embed], components: [components] });
+  } catch (err) {
+    console.error(`[TRACKER CHECKER] Failed to edit embed for ${tracker.robloxUsername}:`, err.name);
+  }
+}
 
 /**
  * Send the milestone notification to the configured channel and mark the
@@ -32,12 +68,14 @@ async function completeTracker(client, tracker) {
     return;
   }
 
+  // Update the tracker embed one final time with milestone-reached status
+  await updateTrackerEmbed(client, tracker, true);
+
   const profileLink = `https://www.roblox.com/users/${tracker.robloxUserId}/profile`;
   const content =
-    `🎉 <@&${tracker.discordRoleId}>\n` +
+    `\uD83C\uDF89 <@&${tracker.discordRoleId}>\n` +
     `**${tracker.robloxUsername}** has reached **${tracker.currentFollowers.toLocaleString()} followers** on Roblox!\n` +
-    `🎯 Target milestone: **${tracker.targetMilestone.toLocaleString()}**\n` +
-    `🔗 Profile: ${profileLink}`;
+    `\uD83D\uDD17 Profile: ${profileLink}`;
 
   try {
     await channel.send({
@@ -66,7 +104,7 @@ async function runCheckCycle(client) {
   try {
     let trackers;
     try {
-      trackers = await RobloxTracker.find({ active: true }).lean(false);
+      trackers = await RobloxTracker.find({ active: true, isConfig: { $ne: true } }).lean(false);
     } catch (err) {
       console.error('[TRACKER CHECKER] MongoDB query failed:', err.name);
       return;
@@ -91,6 +129,8 @@ async function runCheckCycle(client) {
         await tracker.save().catch((err) =>
           console.error(`[TRACKER CHECKER] Failed to save tracker ${tracker._id}:`, err.name),
         );
+        // Edit the existing tracker embed in place
+        await updateTrackerEmbed(client, tracker, false);
       }
     }
   } finally {
@@ -111,7 +151,7 @@ export function startTrackerChecker(client) {
     runCheckCycle(client).catch((err) => console.error('[TRACKER CHECKER] Check cycle failed:', err.name));
   }, CHECK_INTERVAL_MS);
 
-  console.log('✅ Roblox tracker checker started (1-minute interval).');
+  console.log('\u2705 Roblox tracker checker started (1-minute interval).');
 }
 
 /**
