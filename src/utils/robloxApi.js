@@ -8,7 +8,8 @@ const ROBLOX_API_TIMEOUT = 10_000;
  */
 async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ROBLOX_API_TIMEOUT);\n  try {
+  const timeout = setTimeout(() => controller.abort(), ROBLOX_API_TIMEOUT);
+  try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
