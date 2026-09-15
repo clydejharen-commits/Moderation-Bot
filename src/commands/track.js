@@ -20,13 +20,6 @@ export const data = new SlashCommandBuilder()
       .setDescription('The channel where the tracker embed and milestone notification will be sent')
       .setRequired(true)
       .addChannelTypes(ChannelType.GuildText),
-  )
-  .addIntegerOption((opt) =>
-    opt
-      .setName('milestone')
-      .setDescription('The target follower count (e.g. 100000)')
-      .setRequired(true)
-      .setMinValue(1),
   );
 
 export async function execute(interaction) {
@@ -49,13 +42,6 @@ export async function execute(interaction) {
 
   const role = interaction.options.getRole('role');
   const channel = interaction.options.getChannel('channel');
-  const milestone = interaction.options.getInteger('milestone');
-
-  // Validate milestone is a positive whole number
-  if (!milestone || milestone <= 0) {
-    await interaction.reply({ content: '\u274C The milestone must be a positive whole number greater than 0.', ephemeral: true });
-    return;
-  }
 
   // Validate channel is a text channel
   if (channel.type !== ChannelType.GuildText) {
@@ -78,7 +64,7 @@ export async function execute(interaction) {
 
   // Save or update the track configuration for this guild.
   // We store it as a RobloxTracker document with active: false until
-  // R! Track <username> creates the actual tracker.
+  // R! Track <username> <milestone> creates the actual tracker.
   let config;
   try {
     config = await RobloxTracker.findOne({ guildId: guild.id, isConfig: true });
@@ -91,7 +77,6 @@ export async function execute(interaction) {
   if (config) {
     config.discordRoleId = role.id;
     config.channelId = channel.id;
-    config.targetMilestone = milestone;
     try {
       await config.save();
     } catch (err) {
@@ -105,7 +90,7 @@ export async function execute(interaction) {
         guildId: guild.id,
         channelId: channel.id,
         discordRoleId: role.id,
-        targetMilestone: milestone,
+        targetMilestone: 0,
         isConfig: true,
         active: false,
         robloxUserId: '0',
@@ -122,10 +107,9 @@ export async function execute(interaction) {
   await interaction.reply({
     content:
       `\u2705 **Tracker configuration saved for this server.**\n` +
-      `\uD83C\uDFAF Milestone: **${milestone.toLocaleString()}** followers\n` +
       `\uD83D\uDC65 Role: <@&${role.id}>\n` +
       `\uD83D\uDCC1 Channel: ${channel}\n\n` +
-      `Use \`R! Track <username>\` to start tracking a Roblox account.`,
+      `Use \`R! Track <username> <milestone>\` to start tracking a Roblox account.`,
     ephemeral: true,
   });
 }

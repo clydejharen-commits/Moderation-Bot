@@ -20,14 +20,14 @@ export async function handleFollowerPrefix(message) {
   const content = message.content.slice(PREFIX.length).trim();
   const lower = content.toLowerCase();
 
-  // R! Track <username>  /  R! Track stop
+  // R! Track <username> <milestone>  /  R! Track stop
   if (lower.startsWith('track ')) {
     await handleTrack(message, content.slice(6).trim());
     return true;
   }
 
   if (lower === 'track') {
-    await message.reply('\u274C Please provide a Roblox username. Example: `R! Track builderman`');
+    await message.reply('\u274C Please provide a Roblox username and milestone. Example: `R! Track builderman 100000`');
     return true;
   }
 
@@ -60,7 +60,7 @@ function isAdmin(member) {
 }
 
 /* ─────────────────────────────────────────────────────────────
- *  R! Track <username>  /  R! Track stop
+ *  R! Track <username> <milestone>  /  R! Track stop
  * ──────────────────────────────────────────────────────────── */
 
 async function handleTrack(message, args) {
@@ -82,20 +82,33 @@ async function handleTrack(message, args) {
     return;
   }
 
-  // R! Track <username>
-  const username = args.trim();
-  if (!username) {
-    await message.reply('\u274C Please provide a Roblox username. Example: `R! Track builderman`');
+  // R! Track <username> <milestone>
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2) {
+    await message.reply('\u274C Please provide a Roblox username and milestone. Example: `R! Track builderman 100000`');
     return;
   }
 
-  await handleTrackUsername(message, username);
+  const milestoneStr = parts.pop();
+  const username = parts.join(' ');
+  if (!username) {
+    await message.reply('\u274C Please provide a Roblox username. Example: `R! Track builderman 100000`');
+    return;
+  }
+
+  const milestone = Number(milestoneStr);
+  if (!Number.isInteger(milestone) || milestone <= 0) {
+    await message.reply('\u274C The milestone must be a positive whole number (e.g. 100000). Do not use formats like 1k, 10K, or 100,000.');
+    return;
+  }
+
+  await handleTrackUsername(message, username, milestone);
 }
 
 /**
- * R! Track <username> — start tracking a Roblox account.
+ * R! Track <username> <milestone> — start tracking a Roblox account.
  */
-async function handleTrackUsername(message, username) {
+async function handleTrackUsername(message, username, milestone) {
   const { guild } = message;
 
   // Load the /track configuration for this guild
@@ -109,7 +122,7 @@ async function handleTrackUsername(message, username) {
   }
 
   if (!config) {
-    await message.reply('\u274C No tracker configuration found. Please use `/track` first to configure the role, channel, and milestone.');
+    await message.reply('\u274C No tracker configuration found. Please use `/track` first to configure the role and channel.');
     return;
   }
 
@@ -139,9 +152,9 @@ async function handleTrackUsername(message, username) {
   }
 
   // If already at or above the milestone, don't create the tracker
-  if (currentFollowers >= config.targetMilestone) {
+  if (currentFollowers >= milestone) {
     await message.reply(
-      `\u274C **${robloxUser.name}** already has **${currentFollowers.toLocaleString()}** followers, which meets or exceeds the configured milestone of **${config.targetMilestone.toLocaleString()}**.`,
+      `\u274C **${robloxUser.name}** already has **${currentFollowers.toLocaleString()}** followers, which meets or exceeds the milestone of **${milestone.toLocaleString()}**.`,
     );
     return;
   }
@@ -195,7 +208,7 @@ async function handleTrackUsername(message, username) {
       robloxUserId: robloxUser.id,
       robloxUsername: robloxUser.name,
       discordRoleId: config.discordRoleId,
-      targetMilestone: config.targetMilestone,
+      targetMilestone: milestone,
       currentFollowers,
       active: true,
       isConfig: false,
@@ -232,7 +245,7 @@ async function handleTrackUsername(message, username) {
   }
 
   await message.reply(
-    `\u2705 Now tracking **${robloxUser.name}** until they reach **${config.targetMilestone.toLocaleString()}** followers.\n` +
+    `\u2705 Now tracking **${robloxUser.name}** until they reach **${milestone.toLocaleString()}** followers.\n` +
     `\uD83D\uDCC1 Tracker embed sent to ${channel}.`,
   );
 }
