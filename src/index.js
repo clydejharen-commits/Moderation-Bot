@@ -8,6 +8,7 @@ import { data as avatarData, execute as avatarExecute } from './commands/avatar.
 import { data as bannerData, execute as bannerExecute } from './commands/banner.js';
 import { data as followerData, execute as followerExecute } from './commands/follower.js';
 import { data as trackData, execute as trackExecute } from './commands/track.js';
+import { data as autoRemoveData, execute as autoRemoveExecute } from './commands/auto-remove.js';
 import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './commands/follower-prefix.js';
 import {
   handleFollowerButton,
@@ -19,6 +20,7 @@ import {
 } from './components/follower-panel.js';
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
+import { registerGuildMemberUpdate } from './events/guildMemberUpdate.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
 const client = new Client({
@@ -43,6 +45,7 @@ const slashCommands = [
   bannerData,
   followerData,
   trackData,
+  autoRemoveData,
 ];
 
 const commandMap = new Map();
@@ -57,6 +60,7 @@ for (const cmd of slashCommands) {
     banner: bannerExecute,
     follower: followerExecute,
     track: trackExecute,
+    'auto-remove': autoRemoveExecute,
   }[cmd.name]);
 }
 
@@ -78,6 +82,9 @@ client.once(Events.ClientReady, async (readyClient) => {
   // Start the centralized Roblox tracker checker
   startTrackerChecker(readyClient);
 });
+
+// Register the GuildMemberUpdate listener for auto-remove monitoring
+registerGuildMemberUpdate(client);
 
 // Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete)
 client.on(Events.MessageCreate, async (message) => {
