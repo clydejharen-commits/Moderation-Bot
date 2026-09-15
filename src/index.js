@@ -7,6 +7,7 @@ import { data as controlData, execute as controlExecute } from './commands/contr
 import { data as avatarData, execute as avatarExecute } from './commands/avatar.js';
 import { data as bannerData, execute as bannerExecute } from './commands/banner.js';
 import { data as followerData, execute as followerExecute } from './commands/follower.js';
+import { data as trackData, execute as trackExecute } from './commands/track.js';
 import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './commands/follower-prefix.js';
 import {
   handleFollowerButton,
@@ -18,6 +19,7 @@ import {
 } from './components/follower-panel.js';
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
+import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
 const client = new Client({
   intents: [
@@ -40,6 +42,7 @@ const slashCommands = [
   avatarData,
   bannerData,
   followerData,
+  trackData,
 ];
 
 const commandMap = new Map();
@@ -53,16 +56,17 @@ for (const cmd of slashCommands) {
     avatar: avatarExecute,
     banner: bannerExecute,
     follower: followerExecute,
+    track: trackExecute,
   }[cmd.name]);
 }
 
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`\u2705 Bot online as ${readyClient.user.tag}`);
+  console.log(`✅ Bot online as ${readyClient.user.tag}`);
 
   // Register slash commands globally
   try {
     await readyClient.application.commands.set(slashCommands);
-    console.log('\u2705 Slash commands registered globally.');
+    console.log('✅ Slash commands registered globally.');
   } catch (err) {
     console.error('[COMMAND REGISTER ERROR]', err.message);
   }
@@ -70,6 +74,9 @@ client.once(Events.ClientReady, async (readyClient) => {
   // Check for missed daily resets and schedule the timer
   await runDailyReset(readyClient);
   scheduleDailyReset(readyClient);
+
+  // Start the centralized Roblox tracker checker
+  startTrackerChecker(readyClient);
 });
 
 // Handle prefix commands (R!take, R!add, R!stock delete)
@@ -138,9 +145,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.isRepliable()) {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: '\u274C Something went wrong.', ephemeral: true });
+          await interaction.followUp({ content: '❌ Something went wrong.', ephemeral: true });
         } else {
-          await interaction.reply({ content: '\u274C Something went wrong.', ephemeral: true });
+          await interaction.reply({ content: '❌ Something went wrong.', ephemeral: true });
         }
       }
     } catch {
@@ -149,20 +156,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// Graceful shutdown — close the database connection cleanly
+// Graceful shutdown — stop the tracker and close the database connection cleanly
 process.on('SIGINT', async () => {
+  stopTrackerChecker();
   await disconnectDatabase();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
+  stopTrackerChecker();
   await disconnectDatabase();
   process.exit(0);
 });
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('\u274C DISCORD_TOKEN is not set in the environment. Add it to your .env file.');
+  console.error('❌ DISCORD_TOKEN is not set in the environment. Add it to your .env file.');
   process.exit(1);
 }
 
