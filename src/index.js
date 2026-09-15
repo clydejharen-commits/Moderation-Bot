@@ -79,7 +79,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   startTrackerChecker(readyClient);
 });
 
-// Handle prefix commands (R!take, R!add, R!stock delete)
+// Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot) return;
