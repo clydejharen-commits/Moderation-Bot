@@ -32,10 +32,9 @@ async function completeTracker(client, tracker) {
     return;
   }
 
-  const mentionContent = `<@&${tracker.discordRoleId}>`;
   const profileLink = `https://www.roblox.com/users/${tracker.robloxUserId}/profile`;
   const content =
-    `🎉 <@&${tracker.discoderRoleId}>\n` +
+    `🎉 <@&${tracker.discordRoleId}>\n` +
     `**${tracker.robloxUsername}** has reached **${tracker.currentFollowers.toLocaleString()} followers** on Roblox!\n` +
     `🎯 Target milestone: **${tracker.targetMilestone.toLocaleString()}**\n` +
     `🔗 Profile: ${profileLink}`;
