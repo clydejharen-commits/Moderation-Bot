@@ -31,11 +31,21 @@ export function registerGuildMemberUpdate(client) {
       const verifiedRoleId = config.verifiedRoleId;
       const unverifiedRoleId = config.unverifiedRoleId;
 
-      const hadVerified = oldMember.roles.cache.has(verifiedRoleId);
       const hasVerified = newMember.roles.cache.has(verifiedRoleId);
       const hasUnverified = newMember.roles.cache.has(unverifiedRoleId);
 
-      if (!hadVerified && hasVerified && hasUnverified) {
+      if (!hasVerified || !hasUnverified) return;
+
+      // When oldMember is partial or missing (uncached member), we cannot
+      // compare previous role state — act on the current state instead.
+      if (!oldMember || oldMember.partial) {
+        await removeUnverifiedRole(newMember, unverifiedRoleId);
+        return;
+      }
+
+      // For cached members, only act when the Verified role was just added
+      const hadVerified = oldMember.roles.cache.has(verifiedRoleId);
+      if (!hadVerified) {
         await removeUnverifiedRole(newMember, unverifiedRoleId);
       }
     } catch (err) {
