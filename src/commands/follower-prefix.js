@@ -251,35 +251,43 @@ async function handleTrackUsername(message, username, milestone) {
 }
 
 /**
- * R! Track stop — stop the active tracker for this guild.
+ * R! Track stop — stop and delete all active trackers for this guild.
+ *
+ * Deletes the MongoDB documents completely (no active:false records left behind).
+ * Does not send a milestone notification. Other trackers in other guilds are unaffected.
  */
 async function handleTrackStop(message) {
   const { guild } = message;
 
-  let tracker;
+  let trackers;
   try {
-    tracker = await RobloxTracker.findOne({ guildId: guild.id, active: true, isConfig: { $ne: true } });
+    trackers = await RobloxTracker.find({ guildId: guild.id, active: true, isConfig: { $ne: true } });
   } catch (err) {
     console.error('[TRACK STOP] MongoDB query failed:', err.message);
     await message.reply('\u274C Database error. Please try again later.');
     return;
   }
 
-  if (!tracker) {
-    await message.reply('\u274C There is no active tracker.');
+  if (!trackers || trackers.length === 0) {
+    await message.reply('\u274C There are no active trackers.');
     return;
   }
 
-  tracker.active = false;
+  const count = trackers.length;
+  const names = trackers.map((t) => `**${t.robloxUsername}**`).join(', ');
+
   try {
-    await tracker.save();
+    await RobloxTracker.deleteMany({
+      _id: { $in: trackers.map((t) => t._id) },
+    });
   } catch (err) {
-    console.error('[TRACK STOP] Failed to save tracker:', err.message);
-    await message.reply('\u274C Failed to stop the tracker. Please try again later.');
+    console.error('[TRACK STOP] Failed to delete trackers:', err.message);
+    await message.reply('\u274C Failed to stop the tracker(s). Please try again later.');
     return;
   }
 
-  await message.reply('\u2705 The active tracker has been stopped. The tracker record has been kept in the database.');
+  const trackerWord = count === 1 ? 'tracker' : 'trackers';
+  await message.reply(`\u2705 Stopped and removed ${count} ${trackerWord}: ${names}.`);
 }
 
 /* ─────────────────────────────────────────────────────────────
