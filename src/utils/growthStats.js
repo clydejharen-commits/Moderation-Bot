@@ -35,7 +35,10 @@ export async function recordGrowthSample(tracker, followerCount, timestamp = new
 /**
  * Calculate per-minute, per-hour, and per-day follower growth.
  *
- * Uses only the available history — does not invent values.
+ * Per Minute is derived from the last two follower samples.
+ * Per Hour = Per Minute × 60.  Per Day = Per Minute × 1,440.
+ * These are always recalculated from the latest Per Minute value so
+ * they never go stale.
  *
  * @param {import('mongoose').Document} tracker
  * @returns {Promise<{ perMinute: number, perHour: number, perDay: number }>}
@@ -54,51 +57,20 @@ export async function getGrowthStats(tracker) {
   }
 
   const samples = doc.samples;
-  const latest = samples[samples.length - 1];
-  const now = latest.t.getTime();
-  const latestFollowers = latest.f;
+  const latestFollowers = samples[samples.length - 1].f;
 
-  // Per-minute: compare with the sample ~1 minute ago
+  // Per-minute: compare with the previous sample
   let perMinute = 0;
   if (samples.length >= 2) {
     const prev = samples[samples.length - 2];
     perMinute = latestFollowers - prev.f;
   }
 
-  // Per-hour: compare with the sample closest to ~1 hour ago
-  let perHour = 0;
-  const oneHourAgo = now - 60 * 60 * 1000;
-  const hourSample = findSampleAtOrBefore(samples, oneHourAgo);
-  if (hourSample) {
-    perHour = latestFollowers - hourSample.f;
-  }
-
-  // Per-day: compare with the sample closest to ~24 hours ago
-  let perDay = 0;
-  const oneDayAgo = now - 24 * 60 * 60 * 1000;
-  const daySample = findSampleAtOrBefore(samples, oneDayAgo);
-  if (daySample) {
-    perDay = latestFollowers - daySample.f;
-  }
+  // Per Hour and Per Day are derived directly from Per Minute
+  const perHour = perMinute * 60;
+  const perDay = perMinute * 1440;
 
   return { perMinute, perHour, perDay };
-}
-
-/**
- * Find the sample closest to (but not after) the target timestamp.
- * If all samples are after the target, returns the earliest sample.
- * @param {Array<{t: Date, f: number}>} samples
- * @param {number} targetMs
- * @returns {{t: Date, f: number} | null}
- */
-function findSampleAtOrBefore(samples, targetMs) {
-  for (let i = samples.length - 1; i >= 0; i--) {
-    if (samples[i].t.getTime() <= targetMs) {
-      return samples[i];
-    }
-  }
-  // All samples are after the target — use the earliest available
-  return samples[0];
 }
 
 /**
