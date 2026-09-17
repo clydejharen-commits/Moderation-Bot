@@ -6,6 +6,7 @@ import { parseAmount, formatAmount, buildStockEmbed } from '../utils/followerSto
 import { showDeleteConfirmation } from '../components/follower-panel.js';
 import { getRobloxUserId, getFollowerCount } from '../utils/robloxApi.js';
 import { buildTrackerEmbed, buildTrackerComponents } from '../utils/trackerEmbed.js';
+import { recordGrowthSample, deleteGrowthHistoryMany } from '../utils/growthStats.js';
 
 const PREFIX = 'R!';
 
@@ -59,9 +60,10 @@ function isAdmin(member) {
   return true;
 }
 
-/* ─────────────────────────────────────────────────────────────
+/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
  *  R! Track <username> <milestone>  /  R! Track stop
- * ──────────────────────────────────────────────────────────── */
+ * \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+ */
 
 async function handleTrack(message, args) {
   if (!isAdmin(message.member)) {
@@ -244,6 +246,9 @@ async function handleTrackUsername(message, username, milestone) {
     console.error('[TRACK PREFIX] Failed to save messageId:', err.message);
   }
 
+  // Record the initial follower sample for growth tracking
+  await recordGrowthSample(tracker, tracker.currentFollowers, tracker.lastCheckedAt);
+
   await message.reply(
     `\u2705 Now tracking **${robloxUser.name}** until they reach **${milestone.toLocaleString()}** followers.\n` +
     `\uD83D\uDCC1 Tracker embed sent to ${channel}.`,
@@ -286,13 +291,17 @@ async function handleTrackStop(message) {
     return;
   }
 
+  // Delete growth history for the stopped trackers
+  await deleteGrowthHistoryMany(trackers.map((t) => t._id));
+
   const trackerWord = count === 1 ? 'tracker' : 'trackers';
   await message.reply(`\u2705 Stopped and removed ${count} ${trackerWord}: ${names}.`);
 }
 
-/* ─────────────────────────────────────────────────────────────
+/* \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
  *  Follower Stock commands (unchanged)
- * ──────────────────────────────────────────────────────────── */
+ * \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+ */
 
 /**
  * R!take <amount>

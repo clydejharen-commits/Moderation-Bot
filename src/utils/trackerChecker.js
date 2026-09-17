@@ -2,6 +2,7 @@ import { RobloxTracker } from '../db/models/RobloxTracker.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { getFollowerCount } from './robloxApi.js';
 import { buildTrackerEmbed, buildTrackerComponents } from './trackerEmbed.js';
+import { recordGrowthSample, getGrowthStats, deleteGrowthHistory } from './growthStats.js';
 
 const CHECK_INTERVAL_MS = 60_000; // 1 minute
 let checkTimer = null;
@@ -13,8 +14,9 @@ let isChecking = false;
  * @param {import('discord.js').Client} client
  * @param {import('mongoose').Document} tracker
  * @param {boolean} completed
+ * @param {{perMinute: number, perHour: number, perDay: number}|null} [growthStats]
  */
-async function updateTrackerEmbed(client, tracker, completed = false) {
+async function updateTrackerEmbed(client, tracker, completed = false, growthStats = null) {
   if (!tracker.channelId || !tracker.messageId) return;
 
   const guild = client.guilds.cache.get(tracker.guildId);
@@ -32,7 +34,7 @@ async function updateTrackerEmbed(client, tracker, completed = false) {
 
   if (!message) return;
 
-  const embed = buildTrackerEmbed(tracker, completed);
+  const embed = buildTrackerEmbed(tracker, completed, growthStats);
   const components = buildTrackerComponents(tracker.robloxUserId);
 
   try {
@@ -56,6 +58,7 @@ async function completeTracker(client, tracker) {
     tracker.active = false;
     tracker.completedAt = new Date();
     await tracker.save().catch((err) => console.error('[TRACKER CHECKER] Failed to save tracker (guild missing):', err.name));
+    await deleteGrowthHistory(tracker);
     return;
   }
 
@@ -65,11 +68,13 @@ async function completeTracker(client, tracker) {
     tracker.active = false;
     tracker.completedAt = new Date();
     await tracker.save().catch((err) => console.error('[TRACKER CHECKER] Failed to save tracker (channel missing):', err.name));
+    await deleteGrowthHistory(tracker);
     return;
   }
 
   // Update the tracker embed one final time with milestone-reached status
-  await updateTrackerEmbed(client, tracker, true);
+  const finalGrowthStats = await getGrowthStats(tracker);
+  await updateTrackerEmbed(client, tracker, true, finalGrowthStats);
 
   const profileLink = `https://www.roblox.com/users/${tracker.robloxUserId}/profile`;
   const content =
@@ -89,6 +94,9 @@ async function completeTracker(client, tracker) {
   tracker.active = false;
   tracker.completedAt = new Date();
   await tracker.save().catch((err) => console.error('[TRACKER CHECKER] Failed to save tracker (after notification):', err.name));
+
+  // Clean up growth history — tracker is finished
+  await deleteGrowthHistory(tracker);
 }
 
 /**
@@ -129,8 +137,11 @@ async function runCheckCycle(client) {
         await tracker.save().catch((err) =>
           console.error(`[TRACKER CHECKER] Failed to save tracker ${tracker._id}:`, err.name),
         );
+        // Record growth sample and fetch growth stats for the embed
+        await recordGrowthSample(tracker, followerCount, tracker.lastCheckedAt);
+        const growthStats = await getGrowthStats(tracker);
         // Edit the existing tracker embed in place
-        await updateTrackerEmbed(client, tracker, false);
+        await updateTrackerEmbed(client, tracker, false, growthStats);
       }
     }
   } finally {
