@@ -10,6 +10,8 @@ import { data as followerData, execute as followerExecute } from './commands/fol
 import { data as trackData, execute as trackExecute } from './commands/track.js';
 import { data as autoRemoveData, execute as autoRemoveExecute } from './commands/auto-remove.js';
 import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './commands/follower-prefix.js';
+import { data as queueData, execute as queueExecute } from './commands/queue.js';
+import { handleQueuePrefix } from './commands/queue-prefix.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -19,6 +21,7 @@ import {
   isFollowerSelect,
 } from './components/follower-panel.js';
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
+import { handleQueueButton, isQueueButton } from './components/queue-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { registerGuildMemberUpdate } from './events/guildMemberUpdate.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
@@ -46,6 +49,7 @@ const slashCommands = [
   followerData,
   trackData,
   autoRemoveData,
+  queueData,
 ];
 
 const commandMap = new Map();
@@ -61,6 +65,7 @@ for (const cmd of slashCommands) {
     follower: followerExecute,
     track: trackExecute,
     'auto-remove': autoRemoveExecute,
+    queue: queueExecute,
   }[cmd.name]);
 }
 
@@ -86,7 +91,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 // Register the GuildMemberUpdate listener for auto-remove monitoring
 registerGuildMemberUpdate(client);
 
-// Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete)
+// Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete, R! Add, R! Next, R! End Queue)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot) return;
@@ -95,6 +100,9 @@ client.on(Events.MessageCreate, async (message) => {
     if (message.content.startsWith('R!')) {
       const handled = await handleFollowerPrefix(message);
       if (handled) return;
+
+      const queueHandled = await handleQueuePrefix(message);
+      if (queueHandled) return;
     }
   } catch (err) {
     console.error('[MESSAGE ERROR]', err.message);
@@ -124,6 +132,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isControlButton(interaction.customId)) {
         await handleControlButton(interaction);
+        return;
+      }
+      if (isQueueButton(interaction.customId)) {
+        await handleQueueButton(interaction);
         return;
       }
     }
