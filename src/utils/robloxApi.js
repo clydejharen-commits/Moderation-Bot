@@ -3,10 +3,12 @@ const REQUEST_DELAY_MS = 500;
 const MAX_RETRIES = 3;
 const MAX_RETRY_AFTER_MS = 5_000;
 const CACHE_TTL_MS = 5_000;
+const USER_ID_CACHE_TTL_MS = 300_000; // 5 minutes
 
 let requestChain = Promise.resolve();
 
 const followerCountCache = new Map();
+const userIdCache = new Map();
 
 /**
  * Enqueue a function into the sequential Roblox API request queue.
@@ -77,6 +79,8 @@ async function fetchWithTimeout(url, options = {}) {
 /**
  * Look up a Roblox user by username and return { id, name }.
  * Uses Roblox's public v1 users-by-usernames API.
+ * Results are cached for 5 minutes so repeated lookups for the same
+ * username do not hit the API.
  * @param {string} username
  * @returns {Promise<{ id: string, name: string } | null>}
  */
@@ -84,10 +88,16 @@ export async function getRobloxUserId(username) {
   const cleaned = (username || '').trim();
   if (!cleaned) return null;
 
-  return enqueueSequential(() => fetchUserIdWithRetry(cleaned));
+  const cacheKey = cleaned.toLowerCase();
+  const cached = userIdCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
+  }
+
+  return enqueueSequential(() => fetchUserIdWithRetry(cleaned, cacheKey));
 }
 
-async function fetchUserIdWithRetry(username, attempt = 0) {
+async function fetchUserIdWithRetry(username, cacheKey, attempt = 0) {
   let response;
   try {
     response = await fetchWithTimeout('https://users.roblox.com/v1/usernames/users', {
@@ -106,7 +116,7 @@ async function fetchUserIdWithRetry(username, attempt = 0) {
       const backoffMs = retryAfterMs > 0 ? retryAfterMs : exponentialBackoff(attempt);
       console.warn(`[ROBLOX API] Username lookup rate limited (429). Retrying in ${backoffMs}ms (attempt ${attempt + 1}/${MAX_RETRIES}).`);
       await new Promise((r) => setTimeout(r, backoffMs));
-      return fetchUserIdWithRetry(username, attempt + 1);
+      return fetchUserIdWithRetry(username, cacheKey, attempt + 1);
     }
     throw new Error('Roblox API rate limit reached. Please try again later.');
   }
@@ -130,7 +140,9 @@ async function fetchUserIdWithRetry(username, attempt = 0) {
   const user = data.data[0];
   if (!user || !user.id) return null;
 
-  return { id: String(user.id), name: user.name };
+  const result = { id: String(user.id), name: user.name };
+  userIdCache.set(cacheKey, { result, expiresAt: Date.now() + USER_ID_CACHE_TTL_MS });
+  return result;
 }
 
 /**
