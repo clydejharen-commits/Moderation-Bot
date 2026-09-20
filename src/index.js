@@ -12,6 +12,7 @@ import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './comma
 import { data as queueData, execute as queueExecute } from './commands/queue.js';
 import { handleQueuePrefix } from './commands/queue-prefix.js';
 import { data as addButtonData, execute as addButtonExecute } from './commands/add-button.js';
+import { data as ticketData, execute as ticketExecute } from './commands/ticket.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -22,6 +23,7 @@ import {
 } from './components/follower-panel.js';
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
 import { handleQueueButton, isQueueButton } from './components/queue-panel.js';
+import { handleTicketSelect, isTicketSelect } from './components/ticket-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
@@ -49,6 +51,7 @@ const slashCommands = [
   trackData,
   queueData,
   addButtonData,
+  ticketData,
 ];
 
 const commandMap = new Map();
@@ -65,6 +68,7 @@ for (const cmd of slashCommands) {
     track: trackExecute,
     queue: queueExecute,
     'add-button': addButtonExecute,
+    ticket: ticketExecute,
   }[cmd.name]);
 }
 
@@ -152,6 +156,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu()) {
       if (isFollowerSelect(interaction.customId)) {
         await handleFollowerSelect(interaction);
+        return;
+      }
+      if (isTicketSelect(interaction.customId)) {
+        await handleTicketSelect(interaction);
         return;
       }
     }
