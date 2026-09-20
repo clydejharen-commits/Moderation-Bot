@@ -11,6 +11,7 @@ import { data as trackData, execute as trackExecute } from './commands/track.js'
 import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './commands/follower-prefix.js';
 import { data as queueData, execute as queueExecute } from './commands/queue.js';
 import { handleQueuePrefix } from './commands/queue-prefix.js';
+import { data as addButtonData, execute as addButtonExecute } from './commands/add-button.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -47,6 +48,7 @@ const slashCommands = [
   followerData,
   trackData,
   queueData,
+  addButtonData,
 ];
 
 const commandMap = new Map();
@@ -62,6 +64,7 @@ for (const cmd of slashCommands) {
     follower: followerExecute,
     track: trackExecute,
     queue: queueExecute,
+    'add-button': addButtonExecute,
   }[cmd.name]);
 }
 
