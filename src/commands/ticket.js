@@ -5,7 +5,6 @@ import {
   ChannelType,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  ComponentType,
 } from 'discord.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { TicketConfig } from '../db/models/TicketConfig.js';
