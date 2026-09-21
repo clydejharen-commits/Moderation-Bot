@@ -11,6 +11,7 @@ const ticketSchema = new Schema(
     label: { type: String, required: true },
     color: { type: String, default: null },
     emoji: { type: String, default: null },
+    robloxUsername: { type: String, default: null },
   },
   { timestamps: true },
 );

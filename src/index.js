@@ -12,6 +12,7 @@ import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './comma
 import { data as queueData, execute as queueExecute } from './commands/queue.js';
 import { handleQueuePrefix } from './commands/queue-prefix.js';
 import { data as addButtonData, execute as addButtonExecute } from './commands/add-button.js';
+import { data as deleteButtonData, execute as deleteButtonExecute } from './commands/delete-button.js';
 import { data as ticketData, execute as ticketExecute } from './commands/ticket.js';
 import {
   handleFollowerButton,
@@ -23,7 +24,7 @@ import {
 } from './components/follower-panel.js';
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
 import { handleQueueButton, isQueueButton } from './components/queue-panel.js';
-import { handleTicketSelect, isTicketSelect } from './components/ticket-panel.js';
+import { handleTicketSelect, handleTicketModal, isTicketSelect, isTicketModal } from './components/ticket-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
@@ -51,6 +52,7 @@ const slashCommands = [
   trackData,
   queueData,
   addButtonData,
+  deleteButtonData,
   ticketData,
 ];
 
@@ -68,6 +70,7 @@ for (const cmd of slashCommands) {
     track: trackExecute,
     queue: queueExecute,
     'add-button': addButtonExecute,
+    'delete-button': deleteButtonExecute,
     ticket: ticketExecute,
   }[cmd.name]);
 }
@@ -148,6 +151,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isControlModal(interaction.customId)) {
         await handleControlModal(interaction);
+        return;
+      }
+      if (isTicketModal(interaction.customId)) {
+        await handleTicketModal(interaction);
         return;
       }
     }
