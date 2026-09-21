@@ -40,6 +40,38 @@ export const data = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 /**
+ * Parse an emoji string stored in the database into a form usable by
+ * Discord's StringSelectMenuOption emoji property.
+ *
+ * - Unicode emojis ("🎫") → { name: "🎫" }
+ * - Static custom ("<:name:id>") → { id: "id" }
+ * - Animated custom ("<a:name:id>") → { id: "id", animated: true }
+ * - Anything unparseable → null (no emoji rendered)
+ * @param {string} raw
+ * @returns {{name: string} | {id: string, animated?: boolean} | null}
+ */
+function parseEmojiForSelect(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+
+  // Animated custom emoji: <a:name:id>
+  const animatedMatch = trimmed.match(/^<a:(\w+):(\d+)>$/);
+  if (animatedMatch) {
+    return { id: animatedMatch[2], animated: true };
+  }
+
+  // Static custom emoji: <:name:id>
+  const staticMatch = trimmed.match(/^<:(\w+):(\d+)>$/);
+  if (staticMatch) {
+    return { id: staticMatch[2] };
+  }
+
+  // Unicode emoji — return as-is
+  return { name: trimmed };
+}
+
+/**
  * Build the ticket dropdown component from saved TicketOption documents.
  * Returns null if there are no options.
  * @param {import('discord.js').Guild} guild
@@ -57,12 +89,18 @@ export async function buildTicketDropdown(guild) {
   if (!options || options.length === 0) return null;
 
   const selectOptions = options.slice(0, 25).map((opt) => {
-    const label = opt.emoji ? `${opt.emoji} ${opt.label}` : opt.label;
-    return {
-      label: label.length > 100 ? label.slice(0, 100) : label,
+    const selectOption = {
+      label: opt.label.length > 100 ? opt.label.slice(0, 100) : opt.label,
       value: opt.label,
       description: `Open a ${opt.label} ticket`,
     };
+
+    const emoji = parseEmojiForSelect(opt.emoji);
+    if (emoji) {
+      selectOption.emoji = emoji;
+    }
+
+    return selectOption;
   });
 
   const dropdown = new StringSelectMenuBuilder()
