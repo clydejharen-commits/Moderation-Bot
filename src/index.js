@@ -12,8 +12,9 @@ import { handleFollowerPrefix, runDailyReset, scheduleDailyReset } from './comma
 import { data as queueData, execute as queueExecute } from './commands/queue.js';
 import { handleQueuePrefix } from './commands/queue-prefix.js';
 import { data as addButtonData, execute as addButtonExecute } from './commands/add-button.js';
-import { data as deleteButtonData, execute as deleteButtonExecute } from './commands/delete-button.js';
+import { data as deleteButtonData, execute as deleteButtonExecute, autocomplete as deleteButtonAutocomplete } from './commands/delete-button.js';
 import { data as ticketData, execute as ticketExecute } from './commands/ticket.js';
+import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -75,6 +76,9 @@ for (const cmd of slashCommands) {
   }[cmd.name]);
 }
 
+const autocompleteMap = new Map();
+autocompleteMap.set('delete-button', deleteButtonAutocomplete);
+
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`✅ Bot online as ${readyClient.user.tag}`);
 
@@ -94,13 +98,21 @@ client.once(Events.ClientReady, async (readyClient) => {
   startTrackerChecker(readyClient);
 });
 
-// Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete, R! Add, R! Next, R! End Queue)
+// Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete, R! Add, R! Next, R! End Queue, R! Close)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot) return;
     if (!message.guild) return;
 
     if (message.content.startsWith('R!')) {
+      const lower = message.content.slice(2).trim().toLowerCase();
+
+      // R! Close — ticket close command
+      if (lower === 'close') {
+        await handleTicketClosePrefix(message);
+        return;
+      }
+
       const handled = await handleFollowerPrefix(message);
       if (handled) return;
 
@@ -112,9 +124,18 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// Handle slash command, button, modal, and select menu interactions
+// Handle slash command, button, modal, autocomplete, and select menu interactions
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // Autocomplete
+    if (interaction.isAutocomplete()) {
+      const autocompleteHandler = autocompleteMap.get(interaction.commandName);
+      if (autocompleteHandler) {
+        await autocompleteHandler(interaction);
+      }
+      return;
+    }
+
     // Slash commands
     if (interaction.isChatInputCommand()) {
       const executor = commandMap.get(interaction.commandName);
