@@ -12,9 +12,47 @@ export const data = new SlashCommandBuilder()
   .setName('delete-button')
   .setDescription('Delete a ticket option from the dropdown. Administrator only.')
   .addStringOption((opt) =>
-    opt.setName('button-name').setDescription('The name of the ticket option to delete.').setRequired(true).setMaxLength(100),
+    opt
+      .setName('button-name')
+      .setDescription('Select the ticket option to delete.')
+      .setRequired(true)
+      .setMaxLength(100)
+      .setAutocomplete(true),
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+
+/**
+ * Handle autocomplete for the button-name option — returns all saved
+ * ticket options for this guild so the admin can select from a list.
+ * @param {import('discord.js').AutocompleteInteraction} interaction
+ */
+export async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused();
+
+  let options;
+  try {
+    options = await TicketOption.find({ guildId: interaction.guild.id }).sort({ position: 1 }).lean();
+  } catch (err) {
+    console.error('[DELETE-BUTTON AUTOCOMPLETE] DB error:', err.message);
+    await interaction.respond([]);
+    return;
+  }
+
+  if (!options || options.length === 0) {
+    await interaction.respond([]);
+    return;
+  }
+
+  const filtered = options
+    .filter((opt) => opt.label.toLowerCase().includes(focused.toLowerCase()))
+    .slice(0, 25)
+    .map((opt) => ({
+      name: opt.emoji ? `${opt.emoji} ${opt.label}`.slice(0, 100) : opt.label,
+      value: opt.label,
+    }));
+
+  await interaction.respond(filtered);
+}
 
 export async function execute(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
@@ -28,6 +66,21 @@ export async function execute(interaction) {
   }
 
   const label = interaction.options.getString('button-name').trim();
+
+  // Check that at least one ticket option exists
+  let optionCount;
+  try {
+    optionCount = await TicketOption.countDocuments({ guildId: interaction.guild.id });
+  } catch (err) {
+    console.error('[DELETE-BUTTON CMD] DB error:', err.message);
+    await interaction.reply({ content: '\u274C Database error. Please try again later.', ephemeral: true });
+    return;
+  }
+
+  if (optionCount === 0) {
+    await interaction.reply({ content: '\u274C There are no ticket options to delete. Use `/add-button` to create one first.', ephemeral: true });
+    return;
+  }
 
   let existing;
   try {
