@@ -14,6 +14,7 @@ import { handleQueuePrefix } from './commands/queue-prefix.js';
 import { data as addButtonData, execute as addButtonExecute } from './commands/add-button.js';
 import { data as deleteButtonData, execute as deleteButtonExecute, autocomplete as deleteButtonAutocomplete } from './commands/delete-button.js';
 import { data as ticketData, execute as ticketExecute } from './commands/ticket.js';
+import { data as vouchData, execute as vouchExecute } from './commands/vouch.js';
 import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
 import {
   handleFollowerButton,
@@ -26,6 +27,7 @@ import {
 import { handleControlButton, handleControlModal, isControlButton, isControlModal } from './components/control-panel.js';
 import { handleQueueButton, isQueueButton } from './components/queue-panel.js';
 import { handleTicketSelect, handleTicketModal, isTicketSelect, isTicketModal } from './components/ticket-panel.js';
+import { handleVouchButton, handleVouchModal, isVouchButton, isVouchModal } from './components/vouch-panel.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
@@ -55,6 +57,7 @@ const slashCommands = [
   addButtonData,
   deleteButtonData,
   ticketData,
+  vouchData,
 ];
 
 const commandMap = new Map();
@@ -73,6 +76,7 @@ for (const cmd of slashCommands) {
     'add-button': addButtonExecute,
     'delete-button': deleteButtonExecute,
     ticket: ticketExecute,
+    vouch: vouchExecute,
   }[cmd.name]);
 }
 
@@ -162,6 +166,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleQueueButton(interaction);
         return;
       }
+      if (isVouchButton(interaction.customId)) {
+        await handleVouchButton(interaction);
+        return;
+      }
     }
 
     // Modal submissions
@@ -176,6 +184,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isTicketModal(interaction.customId)) {
         await handleTicketModal(interaction);
+        return;
+      }
+      if (isVouchModal(interaction.customId)) {
+        await handleVouchModal(interaction);
         return;
       }
     }

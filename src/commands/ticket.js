@@ -35,6 +35,13 @@ export const data = new SlashCommandBuilder()
           .setName('ticket-staff')
           .setDescription('The role that can access and manage ticket channels.')
           .setRequired(true),
+      )
+      .addChannelOption((opt) =>
+        opt
+          .setName('vouch-channel')
+          .setDescription('The channel where completed vouches will be posted.')
+          .setRequired(false)
+          .addChannelTypes(ChannelType.GuildText),
       ),
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
@@ -127,6 +134,7 @@ export async function execute(interaction) {
   const category = interaction.options.getChannel('ticket-category');
   const messageIdInput = interaction.options.getString('message-id');
   const staffRole = interaction.options.getRole('ticket-staff');
+  const vouchChannel = interaction.options.getChannel('vouch-channel');
 
   // Validate the message ID — must be a snowflake (17-20 digit number)
   if (!/^\d{17,20}$/.test(messageIdInput)) {
@@ -182,15 +190,32 @@ export async function execute(interaction) {
   }
 
   // Save or update the ticket configuration
+  // Preserve the existing vouchChannelId if the admin did not provide a new one
+  const updateData = {
+    categoryId: category.id,
+    messageId: targetMessage.id,
+    channelId: interaction.channel.id,
+    staffRoleId: staffRole.id,
+  };
+
+  if (vouchChannel) {
+    updateData.vouchChannelId = vouchChannel.id;
+  } else {
+    // Keep the existing vouch channel if one was already configured
+    try {
+      const existingConfig = await TicketConfig.findOne({ guildId: interaction.guild.id }).lean();
+      if (existingConfig?.vouchChannelId) {
+        updateData.vouchChannelId = existingConfig.vouchChannelId;
+      }
+    } catch (err) {
+      console.error('[TICKET SETUP] Failed to fetch existing config for vouch channel:', err.message);
+    }
+  }
+
   try {
     await TicketConfig.findOneAndUpdate(
       { guildId: interaction.guild.id },
-      {
-        categoryId: category.id,
-        messageId: targetMessage.id,
-        channelId: interaction.channel.id,
-        staffRoleId: staffRole.id,
-      },
+      updateData,
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
   } catch (err) {
@@ -207,8 +232,20 @@ export async function execute(interaction) {
       { name: 'Panel Message', value: `[Message](${targetMessage.url})`, inline: true },
       { name: 'Ticket Staff', value: `<@&${staffRole.id}>`, inline: true },
       { name: 'Dropdown Options', value: String(optionCount), inline: true },
-    )
-    .setFooter({ text: 'The dropdown has been added to the panel message.' });
+    );
+
+  if (vouchChannel) {
+    embed.addFields({ name: 'Vouch Channel', value: `<#${vouchChannel.id}>`, inline: true });
+  } else {
+    const existingConfig = await TicketConfig.findOne({ guildId: interaction.guild.id }).lean();
+    if (existingConfig?.vouchChannelId) {
+      embed.addFields({ name: 'Vouch Channel', value: `<#${existingConfig.vouchChannelId}>`, inline: true });
+    } else {
+      embed.addFields({ name: 'Vouch Channel', value: 'Not set — run `/ticket setup` with `vouch-channel` to enable vouches.', inline: false });
+    }
+  }
+
+  embed.setFooter({ text: 'The dropdown has been added to the panel message.' });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }

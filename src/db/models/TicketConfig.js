@@ -9,6 +9,7 @@ const ticketConfigSchema = new Schema(
     messageId: { type: String, default: null },
     channelId: { type: String, default: null },
     staffRoleId: { type: String, default: null },
+    vouchChannelId: { type: String, default: null },
   },
   { timestamps: true },
 );
