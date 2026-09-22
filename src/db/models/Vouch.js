@@ -7,6 +7,7 @@ const vouchSchema = new Schema(
     guildId: { type: String, required: true, index: true },
     panelMessageId: { type: String, required: true, index: true },
     vouchedById: { type: String, required: true },
+    vouchedForId: { type: String, required: true },
     vouchFor: { type: String, required: true },
     rating: { type: Number, required: true, min: 1, max: 5 },
     review: { type: String, required: true },

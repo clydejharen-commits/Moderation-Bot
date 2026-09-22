@@ -54,20 +54,20 @@ export async function execute(interaction) {
   }
 
   const vouchFor = interaction.options.getString('vouch-for').trim();
+  const staffMember = interaction.member;
 
   const embed = new EmbedBuilder()
-    .setTitle('\u{1F4AF} Vouch Panel')
-    .setColor(0x2ECC71)
+    .setTitle('Vouch')
+    .setColor(0x000000)
     .addFields(
-      { name: 'Vouch For', value: vouchFor, inline: false },
+      { name: 'Vouched for', value: `<@${staffMember.id}>`, inline: false },
+      { name: 'Service', value: vouchFor, inline: false },
       {
         name: 'How to Vouch',
         value: 'Click the **Vouch** button below to leave a rating and review.',
         inline: false,
       },
-    )
-    .setFooter({ text: `Created by ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() })
-    .setTimestamp();
+    );
 
   const button = new ButtonBuilder()
     .setCustomId('vouch_button')

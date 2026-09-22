@@ -32,6 +32,35 @@ export function isVouchModal(customId) {
 }
 
 /**
+ * Extract the staff member ID and service text from a vouch panel embed.
+ * The panel embed stores "Vouched for" as a mention (<@id>) and
+ * "Service" as the original vouch-for text.
+ * @param {import('discord.js').APIEmbed|null} embed
+ * @returns {{vouchedForId: string, vouchFor: string}}
+ */
+function parsePanelEmbed(embed) {
+  let vouchedForId = 'Unknown';
+  let vouchFor = 'Unknown';
+
+  if (!embed) return { vouchedForId, vouchFor };
+
+  const vouchedForField = embed.fields?.find((f) => f.name === 'Vouched for');
+  if (vouchedForField) {
+    const mentionMatch = vouchedForField.value.match(/<@!?(\d+)>/);
+    if (mentionMatch) {
+      vouchedForId = mentionMatch[1];
+    }
+  }
+
+  const serviceField = embed.fields?.find((f) => f.name === 'Service');
+  if (serviceField) {
+    vouchFor = serviceField.value;
+  }
+
+  return { vouchedForId, vouchFor };
+}
+
+/**
  * Handle the Vouch button click — checks for duplicate vouches, then
  * shows a modal asking for a rating (1-5) and a written review.
  * @param {import('discord.js').ButtonInteraction} interaction
@@ -61,16 +90,6 @@ export async function handleVouchButton(interaction) {
       ephemeral: true,
     });
     return;
-  }
-
-  // Extract the "Vouch For" text from the panel embed
-  let vouchFor = 'Unknown';
-  const embed = interaction.message.embeds?.[0];
-  if (embed) {
-    const field = embed.fields?.find((f) => f.name === 'Vouch For');
-    if (field) {
-      vouchFor = field.value;
-    }
   }
 
   // Build the modal
@@ -126,8 +145,7 @@ export async function handleVouchModal(interaction) {
     return;
   }
 
-  // Fetch the panel message ID from the interaction — Discord carries the
-  // message context in the modal submission
+  // Fetch the panel message ID from the interaction
   const panelMessageId = interaction.message?.id;
 
   if (!panelMessageId) {
@@ -138,14 +156,8 @@ export async function handleVouchModal(interaction) {
     return;
   }
 
-  // Extract the "Vouch For" text from the panel embed
-  let vouchFor = 'Unknown';
-  if (interaction.message?.embeds?.[0]) {
-    const field = interaction.message.embeds[0].fields?.find((f) => f.name === 'Vouch For');
-    if (field) {
-      vouchFor = field.value;
-    }
-  }
+  // Extract the staff member ID and service text from the panel embed
+  const { vouchedForId, vouchFor } = parsePanelEmbed(interaction.message?.embeds?.[0]);
 
   // Re-check for duplicate vouch (race condition guard)
   let existingVouch;
@@ -219,6 +231,7 @@ export async function handleVouchModal(interaction) {
       guildId: guild.id,
       panelMessageId,
       vouchedById: member.id,
+      vouchedForId,
       vouchFor,
       rating,
       review,
@@ -239,19 +252,38 @@ export async function handleVouchModal(interaction) {
     return;
   }
 
+  // Fetch the staff member to get their avatar
+  let staffMember;
+  let staffAvatarURL = null;
+  try {
+    staffMember = await guild.members.fetch(vouchedForId);
+    staffAvatarURL = staffMember.user.displayAvatarURL({ size: 256 });
+  } catch {
+    // If the member left the guild, try fetching the user directly
+    try {
+      const user = await interaction.client.users.fetch(vouchedForId);
+      staffAvatarURL = user.displayAvatarURL({ size: 256 });
+    } catch {
+      // Could not fetch — leave thumbnail null
+    }
+  }
+
   // Build the completed vouch embed
   const stars = '\u2B50'.repeat(rating);
   const vouchEmbed = new EmbedBuilder()
-    .setTitle('\u{1F4AF} New Vouch')
-    .setColor(0x2ECC71)
+    .setTitle('Vouch')
+    .setColor(0x000000)
     .addFields(
-      { name: 'Rating', value: `${stars} (${rating}/5)`, inline: false },
-      { name: 'Vouch For', value: vouchFor, inline: false },
-      { name: 'Vouched By', value: `<@${member.id}>`, inline: false },
+      { name: 'Vouched for', value: `<@${vouchedForId}>`, inline: false },
+      { name: 'Vouched by', value: `<@${member.id}>`, inline: false },
+      { name: 'Service', value: vouchFor, inline: false },
       { name: 'Review', value: review, inline: false },
     )
-    .setFooter({ text: `Vouched by ${member.user.tag}`, iconURL: member.user.displayAvatarURL() })
-    .setTimestamp();
+    .setFooter({ text: stars });
+
+  if (staffAvatarURL) {
+    vouchEmbed.setThumbnail(staffAvatarURL);
+  }
 
   // Send the completed vouch to the vouch channel
   try {
