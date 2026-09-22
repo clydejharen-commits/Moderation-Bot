@@ -37,6 +37,37 @@ function clearPendingSelection(userId, guildId) {
 }
 
 /**
+ * Check whether a ticket's channel still exists in Discord.
+ * If the channel was deleted, remove the stale ticket record from MongoDB
+ * so the user can create a new ticket.
+ * @param {import('discord.js').Guild} guild
+ * @param {import('mongoose').LeanDocument|null} ticket
+ * @returns {Promise<boolean>} true if the ticket is still valid (channel exists)
+ */
+async function isTicketChannelValid(guild, ticket) {
+  if (!ticket) return false;
+
+  let channel;
+  try {
+    channel = await guild.channels.fetch(ticket.channelId);
+  } catch {
+    channel = null;
+  }
+
+  if (!channel) {
+    try {
+      await Ticket.deleteOne({ _id: ticket._id });
+      console.log(`[TICKET PANEL] Removed stale ticket #${ticket.ticketNumber} — channel ${ticket.channelId} no longer exists.`);
+    } catch (err) {
+      console.error('[TICKET PANEL] Failed to remove stale ticket:', err.message);
+    }
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Check whether an interaction customId belongs to the ticket dropdown.
  * @param {string} customId
  * @returns {boolean}
@@ -109,7 +140,7 @@ export async function handleTicketSelect(interaction) {
     return;
   }
 
-  if (existingTicket) {
+  if (existingTicket && await isTicketChannelValid(guild, existingTicket)) {
     await interaction.reply({
       content: `\u274C You already have an open ticket: <#${existingTicket.channelId}>. Please close it before opening a new one.`,
       ephemeral: true,
@@ -165,7 +196,7 @@ export async function handleTicketModal(interaction) {
     return;
   }
 
-  if (existingTicket) {
+  if (existingTicket && await isTicketChannelValid(guild, existingTicket)) {
     clearPendingSelection(member.id, guild.id);
     await interaction.reply({
       content: `\u274C You already have an open ticket: <#${existingTicket.channelId}>. Please close it before opening a new one.`,
