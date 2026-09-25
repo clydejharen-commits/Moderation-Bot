@@ -15,6 +15,8 @@ import { data as addButtonData, execute as addButtonExecute } from './commands/a
 import { data as deleteButtonData, execute as deleteButtonExecute, autocomplete as deleteButtonAutocomplete } from './commands/delete-button.js';
 import { data as ticketData, execute as ticketExecute } from './commands/ticket.js';
 import { data as vouchData, execute as vouchExecute } from './commands/vouch.js';
+import { data as dmData, execute as dmExecute } from './commands/dm.js';
+import { data as closeData, execute as closeExecute, autocomplete as closeAutocomplete } from './commands/close-button.js';
 import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
 import {
   handleFollowerButton,
@@ -58,6 +60,8 @@ const slashCommands = [
   deleteButtonData,
   ticketData,
   vouchData,
+  dmData,
+  closeData,
 ];
 
 const commandMap = new Map();
@@ -77,16 +81,18 @@ for (const cmd of slashCommands) {
     'delete-button': deleteButtonExecute,
     ticket: ticketExecute,
     vouch: vouchExecute,
+    dm: dmExecute,
+    'close': closeExecute,
   }[cmd.name]);
 }
 
 const autocompleteMap = new Map();
 autocompleteMap.set('delete-button', deleteButtonAutocomplete);
+autocompleteMap.set('close', closeAutocomplete);
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`✅ Bot online as ${readyClient.user.tag}`);
 
-  // Register slash commands globally
   try {
     await readyClient.application.commands.set(slashCommands);
     console.log('✅ Slash commands registered globally.');
@@ -94,15 +100,12 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('[COMMAND REGISTER ERROR]', err.message);
   }
 
-  // Check for missed daily resets and schedule the timer
   await runDailyReset(readyClient);
   scheduleDailyReset(readyClient);
 
-  // Start the centralized Roblox tracker checker
   startTrackerChecker(readyClient);
 });
 
-// Handle prefix commands (R! Track, R! Track stop, R!take, R!add, R!stock delete, R! Add, R! Next, R! End Queue, R! Close)
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot) return;
@@ -111,7 +114,6 @@ client.on(Events.MessageCreate, async (message) => {
     if (message.content.startsWith('R!')) {
       const lower = message.content.slice(2).trim().toLowerCase();
 
-      // R! Close — ticket close command
       if (lower === 'close') {
         await handleTicketClosePrefix(message);
         return;
@@ -128,10 +130,8 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// Handle slash command, button, modal, autocomplete, and select menu interactions
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    // Autocomplete
     if (interaction.isAutocomplete()) {
       const autocompleteHandler = autocompleteMap.get(interaction.commandName);
       if (autocompleteHandler) {
@@ -140,19 +140,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // Slash commands
     if (interaction.isChatInputCommand()) {
       const executor = commandMap.get(interaction.commandName);
       if (!executor) return;
 
-      // Prevent duplicate processing
       if (interaction.replied || interaction.deferred) return;
 
       await executor(interaction);
       return;
     }
 
-    // Button interactions
     if (interaction.isButton()) {
       if (isFollowerButton(interaction.customId)) {
         await handleFollowerButton(interaction);
@@ -172,7 +169,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
 
-    // Modal submissions
     if (interaction.isModalSubmit()) {
       if (isFollowerModal(interaction.customId)) {
         await handleFollowerModal(interaction);
@@ -192,7 +188,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
 
-    // Select menu interactions (string and channel select menus)
     if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu()) {
       if (isFollowerSelect(interaction.customId)) {
         await handleFollowerSelect(interaction);
@@ -219,7 +214,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// Graceful shutdown — stop the tracker and close the database connection cleanly
 process.on('SIGINT', async () => {
   stopTrackerChecker();
   await disconnectDatabase();
@@ -238,8 +232,6 @@ if (!token) {
   process.exit(1);
 }
 
-// Connect to MongoDB before logging in to Discord.
-// If MongoDB is unavailable the bot still starts — database is optional.
 await connectDatabase();
 
 client.login(token);

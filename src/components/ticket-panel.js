@@ -11,12 +11,11 @@ import { TicketConfig } from '../db/models/TicketConfig.js';
 import { TicketCounter } from '../db/models/TicketCounter.js';
 import { Ticket } from '../db/models/Ticket.js';
 import { TicketOption } from '../db/models/TicketOption.js';
+import { ClosedButton } from '../db/models/ClosedButton.js';
 
 const TICKET_SELECT_ID = 'ticket_select';
 const TICKET_MODAL_ID = 'ticket_modal_roblox';
 
-// Stores the selected ticket label between the dropdown selection and the
-// modal submission, since Discord does not carry select values into modals.
 const pendingSelections = new Map();
 
 function pendingKey(userId, guildId) {
@@ -36,14 +35,6 @@ function clearPendingSelection(userId, guildId) {
   pendingSelections.delete(pendingKey(userId, guildId));
 }
 
-/**
- * Check whether a ticket's channel still exists in Discord.
- * If the channel was deleted, remove the stale ticket record from MongoDB
- * so the user can create a new ticket.
- * @param {import('discord.js').Guild} guild
- * @param {import('mongoose').LeanDocument|null} ticket
- * @returns {Promise<boolean>} true if the ticket is still valid (channel exists)
- */
 async function isTicketChannelValid(guild, ticket) {
   if (!ticket) return false;
 
@@ -67,29 +58,14 @@ async function isTicketChannelValid(guild, ticket) {
   return true;
 }
 
-/**
- * Check whether an interaction customId belongs to the ticket dropdown.
- * @param {string} customId
- * @returns {boolean}
- */
 export function isTicketSelect(customId) {
   return customId === TICKET_SELECT_ID;
 }
 
-/**
- * Check whether an interaction customId belongs to the ticket Roblox username modal.
- * @param {string} customId
- * @returns {boolean}
- */
 export function isTicketModal(customId) {
   return customId === TICKET_MODAL_ID;
 }
 
-/**
- * Get the next ticket number for a guild, incrementing the counter atomically.
- * @param {string} guildId
- * @returns {Promise<number|null>}
- */
 async function getNextTicketNumber(guildId) {
   let counter;
   try {
@@ -105,17 +81,11 @@ async function getNextTicketNumber(guildId) {
   return counter.count;
 }
 
-/**
- * Handle the ticket dropdown selection — shows a modal asking for the
- * user's Roblox username before creating the ticket channel.
- * @param {import('discord.js').StringSelectMenuInteraction} interaction
- */
 export async function handleTicketSelect(interaction) {
   const guild = interaction.guild;
   const member = interaction.member;
   const selectedLabel = interaction.values[0];
 
-  // Fetch the ticket configuration
   let config;
   try {
     config = await TicketConfig.findOne({ guildId: guild.id }).lean();
@@ -130,7 +100,26 @@ export async function handleTicketSelect(interaction) {
     return;
   }
 
-  // One open ticket per member — check before showing the modal
+  let closedButton;
+  try {
+    closedButton = await ClosedButton.findOne({ guildId: guild.id, label: selectedLabel }).lean();
+  } catch (err) {
+    console.error('[TICKET PANEL] Failed to check closed button:', err.message);
+    await interaction.reply({ content: '\u274C Database error. Please try again later.', ephemeral: true });
+    return;
+  }
+
+  if (closedButton) {
+    const reasonText = closedButton.reason
+      ? `\nReason: ${closedButton.reason}`
+      : '';
+    await interaction.reply({
+      content: `\u{1F512} This ticket option is currently closed.${reasonText}`,
+      ephemeral: true,
+    });
+    return;
+  }
+
   let existingTicket;
   try {
     existingTicket = await Ticket.findOne({ guildId: guild.id, creatorId: member.id }).lean();
@@ -148,10 +137,8 @@ export async function handleTicketSelect(interaction) {
     return;
   }
 
-  // Store the selected label so the modal submission handler can retrieve it
   setPendingSelection(member.id, guild.id, selectedLabel);
 
-  // Show the Roblox username modal
   const modal = new ModalBuilder()
     .setCustomId(TICKET_MODAL_ID)
     .setTitle(`Open a ${selectedLabel} ticket`);
@@ -169,16 +156,11 @@ export async function handleTicketSelect(interaction) {
   await interaction.showModal(modal);
 }
 
-/**
- * Handle the Roblox username modal submission — creates the ticket channel.
- * @param {import('discord.js').ModalSubmitInteraction} interaction
- */
 export async function handleTicketModal(interaction) {
   const guild = interaction.guild;
   const member = interaction.member;
   const robloxUsername = interaction.fields.getTextInputValue('ticket_roblox_username').trim();
 
-  // Retrieve the selected label from the pending map
   const selectedLabel = getPendingSelection(member.id, guild.id);
 
   if (!selectedLabel) {
@@ -186,7 +168,6 @@ export async function handleTicketModal(interaction) {
     return;
   }
 
-  // Re-check for existing ticket (race condition guard)
   let existingTicket;
   try {
     existingTicket = await Ticket.findOne({ guildId: guild.id, creatorId: member.id }).lean();
@@ -205,7 +186,6 @@ export async function handleTicketModal(interaction) {
     return;
   }
 
-  // Fetch the ticket configuration
   let config;
   try {
     config = await TicketConfig.findOne({ guildId: guild.id }).lean();
@@ -221,10 +201,8 @@ export async function handleTicketModal(interaction) {
     return;
   }
 
-  // Clear the pending selection — we have everything we need
   clearPendingSelection(member.id, guild.id);
 
-  // Fetch the matching ticket option for color/emoji
   let ticketOption;
   try {
     ticketOption = await TicketOption.findOne({ guildId: guild.id, label: selectedLabel }).lean();
@@ -232,25 +210,21 @@ export async function handleTicketModal(interaction) {
     console.error('[TICKET PANEL] Failed to fetch ticket option:', err.message);
   }
 
-  // Get the next ticket number
   const ticketNumber = await getNextTicketNumber(guild.id);
   if (ticketNumber === null) {
     await interaction.reply({ content: '\u274C Failed to generate a ticket number. Please try again later.', ephemeral: true });
     return;
   }
 
-  // Build the channel name: "number-button-name"
   const slug = selectedLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   const channelName = `${ticketNumber}-${slug}`;
 
-  // Parse the hex color for the ticket embed
   let embedColor = 0x2ECC71;
   if (ticketOption?.color) {
     const parsed = parseInt(ticketOption.color.replace(/^#/, ''), 16);
     if (!Number.isNaN(parsed)) embedColor = parsed;
   }
 
-  // Fetch the category channel
   let categoryChannel;
   try {
     categoryChannel = await guild.channels.fetch(config.categoryId);
@@ -264,7 +238,6 @@ export async function handleTicketModal(interaction) {
     return;
   }
 
-  // Create the ticket channel inside the category
   let ticketChannel;
   try {
     ticketChannel = await guild.channels.create({
@@ -311,7 +284,6 @@ export async function handleTicketModal(interaction) {
     return;
   }
 
-  // Save the ticket record
   try {
     await Ticket.create({
       guildId: guild.id,
@@ -327,7 +299,6 @@ export async function handleTicketModal(interaction) {
     console.error('[TICKET PANEL] Failed to save ticket record:', err.message);
   }
 
-  // Send the initial embed in the ticket channel
   const emojiPrefix = ticketOption?.emoji ? `${ticketOption.emoji} ` : '';
   const ticketEmbed = new EmbedBuilder()
     .setTitle(`${emojiPrefix}Ticket #${ticketNumber} — ${selectedLabel}`)
