@@ -18,6 +18,7 @@ import { data as vouchData, execute as vouchExecute } from './commands/vouch.js'
 import { data as dmData, execute as dmExecute } from './commands/dm.js';
 import { data as closeData, execute as closeExecute, autocomplete as closeAutocomplete } from './commands/close-button.js';
 import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
+import { handleBotProfilePrefix } from './commands/bot-profile-prefix.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -118,6 +119,9 @@ client.on(Events.MessageCreate, async (message) => {
         await handleTicketClosePrefix(message);
         return;
       }
+
+      const botProfileHandled = await handleBotProfilePrefix(message);
+      if (botProfileHandled) return;
 
       const handled = await handleFollowerPrefix(message);
       if (handled) return;
