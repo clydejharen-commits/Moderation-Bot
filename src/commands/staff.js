@@ -1,7 +1,12 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder } from 'discord.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { QuestConfig } from '../db/models/QuestConfig.js';
 import { StaffPoints } from '../db/models/StaffPoints.js';
+import {
+  buildLeaderboardEmbed,
+  saveLeaderboardMessageId,
+  isLeaderboardMessageDeleted,
+} from '../utils/leaderboardHelpers.js';
 
 export const data = new SlashCommandBuilder()
   .setName('staff')
@@ -26,67 +31,32 @@ export async function execute(interaction) {
 }
 
 async function handleLeaderboard(interaction) {
-  let config;
+  const guildId = interaction.guild.id;
+  const client = interaction.client;
+
+  const deleted = await isLeaderboardMessageDeleted(client, guildId);
+
+  if (!deleted) {
+    await interaction.reply({ content: '✅ The leaderboard is already active and up to date.', ephemeral: true });
+    return;
+  }
+
+  const embed = await buildLeaderboardEmbed(client, guildId);
+
+  if (!embed) {
+    await interaction.reply({ content: '❌ Database error. Failed to build the leaderboard.', ephemeral: true });
+    return;
+  }
+
+  let sentMessage;
   try {
-    config = await QuestConfig.findOne({ guildId: interaction.guild.id }).lean();
+    sentMessage = await interaction.channel.send({ embeds: [embed] });
   } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await interaction.reply({ content: '❌ Failed to send the leaderboard message. Check my permissions.', ephemeral: true });
     return;
   }
 
-  const promotionPercent = config?.promotionPercent ?? 80;
-  const demotionPercent = config?.demotionPercent ?? 40;
+  await saveLeaderboardMessageId(guildId, interaction.channelId, sentMessage.id);
 
-  let pointsDocs;
-  try {
-    pointsDocs = await StaffPoints.find({ guildId: interaction.guild.id }).lean();
-  } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
-    return;
-  }
-
-  if (pointsDocs.length === 0) {
-    await interaction.reply({ content: '❌ No staff points found.', ephemeral: true });
-    return;
-  }
-
-  const entries = pointsDocs
-    .map((doc) => ({
-      userId: doc.userId,
-      points: doc.points,
-      percent: Math.min(doc.points, 100),
-    }))
-    .sort((a, b) => b.points - a.points);
-
-  const lines = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const rank = i + 1;
-    let username = entry.userId;
-    try {
-      const user = await interaction.client.users.fetch(entry.userId);
-      username = user.username;
-    } catch {
-      // fallback to id
-    }
-
-    let status = 'Normal';
-    if (entry.percent >= promotionPercent) {
-      status = 'Promotion';
-    } else if (entry.percent < demotionPercent) {
-      status = 'Demotion';
-    }
-
-    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
-    lines.push(`${medal} ${username} — ${entry.points} points — ${entry.percent}% — ${status}`);
-  }
-
-  const embed = new EmbedBuilder()
-    .setTitle('🏆 Staff Leaderboard')
-    .setColor(0xF1C40F)
-    .setDescription(lines.join('\n'))
-    .setFooter({ text: `Promotion: ${promotionPercent}% | Demotion: ${demotionPercent}%` })
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [embed] });
+  await interaction.reply({ content: '✅ Staff leaderboard created.', ephemeral: true });
 }

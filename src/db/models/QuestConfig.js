@@ -9,8 +9,11 @@ const questConfigSchema = new Schema(
     traineeRoles: { type: [String], default: [] },
     trainerUsers: { type: [String], default: [] },
     trainerRoles: { type: [String], default: [] },
-    promotionPercent: { type: Number, default: 80, min: 0, max: 100 },
-    demotionPercent: { type: Number, default: 40, min: 0, max: 100 },
+    pointsPerCoin: { type: Number, default: 5, min: 1 },
+    coinsForPromotion: { type: Number, default: 15 },
+    coinsForDemotion: { type: Number, default: -5 },
+    leaderboardChannelId: { type: String, default: null },
+    leaderboardMessageId: { type: String, default: null },
   },
   { timestamps: true },
 );

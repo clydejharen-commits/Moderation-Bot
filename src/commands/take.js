@@ -6,17 +6,17 @@ import { isTrainerOrAdmin } from '../components/quest-question.js';
 import { updateLeaderboardMessage } from '../utils/leaderboardHelpers.js';
 
 export const data = new SlashCommandBuilder()
-  .setName('add')
-  .setDescription('Add points to a staff member.')
+  .setName('take')
+  .setDescription('Take points from a staff member.')
   .addSubcommand((sub) =>
     sub
       .setName('points')
-      .setDescription('Add points to a staff member.')
+      .setDescription('Take points from a staff member.')
       .addUserOption((opt) =>
-        opt.setName('user').setDescription('The staff member to add points to.').setRequired(true),
+        opt.setName('user').setDescription('The staff member to take points from.').setRequired(true),
       )
       .addIntegerOption((opt) =>
-        opt.setName('points').setDescription('Points to add (1 or more).').setRequired(true).setMinValue(1),
+        opt.setName('points').setDescription('Points to take (1 or more).').setRequired(true).setMinValue(1),
       ),
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
@@ -37,7 +37,7 @@ export async function execute(interaction) {
 
   const isTrainer = await isTrainerOrAdmin(interaction.member, config);
   if (!isTrainer) {
-    await interaction.reply({ content: '❌ Only configured Trainers or Administrators can add points.', ephemeral: true });
+    await interaction.reply({ content: '❌ Only configured Trainers or Administrators can take points.', ephemeral: true });
     return;
   }
 
@@ -50,7 +50,7 @@ export async function execute(interaction) {
   }
 
   if (user.bot) {
-    await interaction.reply({ content: '❌ You cannot add points to a bot.', ephemeral: true });
+    await interaction.reply({ content: '❌ You cannot take points from a bot.', ephemeral: true });
     return;
   }
 
@@ -59,19 +59,31 @@ export async function execute(interaction) {
     return;
   }
 
+  let updated;
   try {
-    await StaffPoints.findOneAndUpdate(
+    updated = await StaffPoints.findOneAndUpdate(
       { guildId: interaction.guild.id, userId: user.id },
-      { $inc: { points } },
+      { $inc: { points: -points } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
   } catch (err) {
-    console.error('[QUEST] Failed to add points:', err.message);
-    await interaction.reply({ content: '❌ Database error. Failed to add points.', ephemeral: true });
+    console.error('[QUEST] Failed to take points:', err.message);
+    await interaction.reply({ content: '❌ Database error. Failed to take points.', ephemeral: true });
     return;
+  }
+
+  if (updated.points < 0) {
+    try {
+      await StaffPoints.findOneAndUpdate(
+        { guildId: interaction.guild.id, userId: user.id },
+        { points: 0 },
+      );
+    } catch {
+      // non-fatal
+    }
   }
 
   await updateLeaderboardMessage(interaction.client, interaction.guild.id);
 
-  await interaction.reply({ content: `✅ Added **${points}** point(s) to <@${user.id}>.`, ephemeral: true });
+  await interaction.reply({ content: `✅ Took **${points}** point(s) from <@${user.id}>.`, ephemeral: true });
 }
