@@ -64,7 +64,7 @@ export function isTrainingSetupModal(customId) {
 }
 
 export function isTrainingSetupSelect(customId) {
-  return customId.startsWith('training_select_');
+  return customId.startsWith('training_select_') || customId.startsWith('training_qw_');
 }
 
 export function registerTrainingSetup(userId, channelId, guildId) {
@@ -118,6 +118,28 @@ function formatTime(seconds) {
   return `${seconds}s`;
 }
 
+async function ensureDeferred(interaction, mode = 'update') {
+  if (!interaction.deferred && !interaction.replied) {
+    if (mode === 'update') {
+      await interaction.deferUpdate();
+    } else {
+      await interaction.deferReply({ ephemeral: true });
+    }
+  }
+}
+
+async function respond(interaction, payload, isUpdate = false) {
+  if (interaction.deferred) {
+    await interaction.editReply(payload);
+  } else if (interaction.replied) {
+    await interaction.followUp({ ...payload, ephemeral: true });
+  } else if (isUpdate) {
+    await interaction.update(payload);
+  } else {
+    await interaction.reply({ ...payload, ephemeral: true });
+  }
+}
+
 export async function handleTrainingSetupButton(interaction) {
   const customId = interaction.customId;
   const userId = interaction.user.id;
@@ -141,15 +163,16 @@ export async function handleTrainingSetupButton(interaction) {
       await interaction.reply({ content: '❌ This panel is no longer active.', ephemeral: true });
       return;
     }
+    await interaction.deferUpdate();
     let config;
     try {
       config = await getOrCreateConfig(panel.guildId);
     } catch {
-      await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
       return;
     }
     const panelData = buildMainPanel(config);
-    await interaction.update({ ...panelData });
+    await interaction.editReply({ ...panelData });
     return;
   }
 
@@ -194,14 +217,10 @@ export async function handleTrainingSetupButton(interaction) {
       await showDeleteQuestionList(interaction, panel.guildId, 0);
       break;
     default:
-      if (customId.startsWith('training_qw_type:')) {
-        await handleQuestionTypeSelect(interaction, customId, panel.guildId);
-      } else if (customId.startsWith('training_qw_correct:')) {
-        await handleCorrectAnswerSelect(interaction, customId, panel.guildId);
-      } else if (customId.startsWith('training_del_confirm:')) {
+      if (customId.startsWith('training_del_confirm:')) {
         await handleDeleteConfirm(interaction, customId.split(':')[1], panel.guildId);
       } else if (customId === 'training_del_cancel') {
-        const config = await getOrCreateConfig(panel.guildId);
+        await interaction.deferUpdate();
         await showQuestionManagement(interaction, panel.guildId, true);
       } else if (customId === 'training_qm_list_prev' || customId === 'training_qm_list_next') {
         const wizard = getWizard(userId, channelId);
@@ -224,26 +243,28 @@ export async function handleTrainingSetupSelect(interaction) {
   }
 
   if (customId === 'training_select_channel') {
-    const channelId = interaction.values[0];
+    const selectedChannelId = interaction.values[0];
+    await interaction.deferUpdate();
     try {
       await TrainingConfig.findOneAndUpdate(
         { guildId: panel.guildId },
-        { trainingChannelId: channelId },
+        { trainingChannelId: selectedChannelId },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     } catch {
-      await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
       return;
     }
     const config = await getOrCreateConfig(panel.guildId);
     const panelData = buildMainPanel(config);
-    await interaction.update({ ...panelData });
-    await interaction.followUp({ content: `✅ Training channel set to <#${channelId}>.`, ephemeral: true });
+    await interaction.editReply({ ...panelData });
+    await interaction.followUp({ content: `✅ Training channel set to <#${selectedChannelId}>.`, ephemeral: true });
     return;
   }
 
   if (customId === 'training_select_role') {
     const roleId = interaction.values[0];
+    await interaction.deferUpdate();
     try {
       await TrainingConfig.findOneAndUpdate(
         { guildId: panel.guildId },
@@ -251,24 +272,34 @@ export async function handleTrainingSetupSelect(interaction) {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     } catch {
-      await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
       return;
     }
     const config = await getOrCreateConfig(panel.guildId);
     const panelData = buildMainPanel(config);
-    await interaction.update({ ...panelData });
+    await interaction.editReply({ ...panelData });
     await interaction.followUp({ content: `✅ Trainer role set to <@&${roleId}>.`, ephemeral: true });
     return;
   }
 
+  if (customId.startsWith('training_qw_type:')) {
+    await handleQuestionTypeSelect(interaction, customId, panel.guildId);
+    return;
+  }
+
+  if (customId.startsWith('training_qw_correct:')) {
+    await handleCorrectAnswerSelect(interaction, customId, panel.guildId);
+    return;
+  }
+
   if (customId.startsWith('training_select_edit:')) {
-    const questionId = customId.split(':')[1];
+    const questionId = interaction.values[0];
     await startEditQuestion(interaction, panel.guildId, questionId);
     return;
   }
 
   if (customId.startsWith('training_select_delete:')) {
-    const questionId = customId.split(':')[1];
+    const questionId = interaction.values[0];
     await showDeleteConfirmation(interaction, questionId, panel.guildId);
     return;
   }
@@ -292,6 +323,7 @@ export async function handleTrainingSetupModal(interaction) {
       await interaction.reply({ content: '❌ Passing score must be a number between 0 and 100.', ephemeral: true });
       return;
     }
+    await interaction.deferUpdate();
     try {
       await TrainingConfig.findOneAndUpdate(
         { guildId: panel.guildId },
@@ -299,12 +331,12 @@ export async function handleTrainingSetupModal(interaction) {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     } catch {
-      await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
       return;
     }
     const config = await getOrCreateConfig(panel.guildId);
     const panelData = buildMainPanel(config);
-    await interaction.update({ ...panelData });
+    await interaction.editReply({ ...panelData });
     await interaction.followUp({ content: `✅ Passing score set to ${score}%.`, ephemeral: true });
     return;
   }
@@ -316,6 +348,7 @@ export async function handleTrainingSetupModal(interaction) {
       await interaction.reply({ content: '❌ Questions per training must be a number between 1 and 100.', ephemeral: true });
       return;
     }
+    await interaction.deferUpdate();
     try {
       await TrainingConfig.findOneAndUpdate(
         { guildId: panel.guildId },
@@ -323,12 +356,12 @@ export async function handleTrainingSetupModal(interaction) {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     } catch {
-      await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
       return;
     }
     const config = await getOrCreateConfig(panel.guildId);
     const panelData = buildMainPanel(config);
-    await interaction.update({ ...panelData });
+    await interaction.editReply({ ...panelData });
     await interaction.followUp({ content: `✅ Questions per training set to ${count}.`, ephemeral: true });
     return;
   }
@@ -340,6 +373,7 @@ export async function handleTrainingSetupModal(interaction) {
       await interaction.reply({ content: '❌ Time limit must be between 1 and 300 seconds.', ephemeral: true });
       return;
     }
+    await interaction.deferUpdate();
     try {
       await TrainingConfig.findOneAndUpdate(
         { guildId: panel.guildId },
@@ -347,12 +381,12 @@ export async function handleTrainingSetupModal(interaction) {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     } catch {
-      await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
       return;
     }
     const config = await getOrCreateConfig(panel.guildId);
     const panelData = buildMainPanel(config);
-    await interaction.update({ ...panelData });
+    await interaction.editReply({ ...panelData });
     await interaction.followUp({ content: `✅ Question time limit set to ${formatTime(seconds)}.`, ephemeral: true });
     return;
   }
@@ -550,11 +584,12 @@ async function showTimeLimitModal(interaction, guildId) {
 }
 
 async function showQuestionManagement(interaction, guildId, isUpdate = false) {
+  await ensureDeferred(interaction, isUpdate ? 'update' : 'reply');
   let count;
   try {
     count = await TrainingQuestion.countDocuments({ guildId });
   } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await respond(interaction, { content: '❌ Database error.', embeds: [], components: [] });
     return;
   }
 
@@ -579,12 +614,7 @@ async function showQuestionManagement(interaction, guildId, isUpdate = false) {
   );
 
   const payload = { embeds: [embed], components: [row1, row2, row3] };
-
-  if (isUpdate) {
-    await interaction.update(payload);
-  } else {
-    await interaction.reply({ ...payload, ephemeral: true });
-  }
+  await respond(interaction, payload, isUpdate);
 }
 
 async function startAddQuestion(interaction, guildId) {
@@ -734,6 +764,8 @@ async function handleCorrectAnswerSelect(interaction, customId, guildId) {
     return;
   }
 
+  await interaction.deferUpdate();
+
   if (mode === 'add') {
     try {
       await TrainingQuestion.create({
@@ -746,12 +778,11 @@ async function handleCorrectAnswerSelect(interaction, customId, guildId) {
       });
     } catch (err) {
       console.error('[TRAINING SETUP] Failed to create question:', err.message);
-      await interaction.reply({ content: '❌ Database error. Failed to save the question.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error. Failed to save the question.', embeds: [], components: [] });
       return;
     }
 
     deleteWizard(interaction.user.id, interaction.channelId);
-    await interaction.update({ content: '✅ Question added successfully!', embeds: [], components: [] });
     await showQuestionManagement(interaction, guildId, true);
   } else if (mode === 'edit') {
     try {
@@ -764,27 +795,27 @@ async function handleCorrectAnswerSelect(interaction, customId, guildId) {
       });
     } catch (err) {
       console.error('[TRAINING SETUP] Failed to update question:', err.message);
-      await interaction.reply({ content: '❌ Database error. Failed to update the question.', ephemeral: true });
+      await interaction.editReply({ content: '❌ Database error. Failed to update the question.', embeds: [], components: [] });
       return;
     }
 
     deleteWizard(interaction.user.id, interaction.channelId);
-    await interaction.update({ content: '✅ Question updated successfully!', embeds: [], components: [] });
     await showQuestionManagement(interaction, guildId, true);
   }
 }
 
 async function showQuestionList(interaction, guildId, page) {
+  await ensureDeferred(interaction);
   let questions;
   try {
     questions = await TrainingQuestion.find({ guildId }).sort({ createdAt: 1 }).lean();
   } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await respond(interaction, { content: '❌ Database error.', embeds: [], components: [] });
     return;
   }
 
   if (questions.length === 0) {
-    await interaction.reply({ content: '❌ No questions have been added yet.', ephemeral: true });
+    await respond(interaction, { content: '❌ No questions have been added yet.', embeds: [], components: [] });
     return;
   }
 
@@ -827,20 +858,21 @@ async function showQuestionList(interaction, guildId, page) {
     new ButtonBuilder().setCustomId('training_qm_back').setLabel('◀ Back').setStyle(ButtonStyle.Secondary),
   ));
 
-  await interaction.update({ embeds: [embed], components });
+  await respond(interaction, { embeds: [embed], components }, true);
 }
 
 async function showEditQuestionList(interaction, guildId, page) {
+  await ensureDeferred(interaction);
   let questions;
   try {
     questions = await TrainingQuestion.find({ guildId }).sort({ createdAt: 1 }).lean();
   } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await respond(interaction, { content: '❌ Database error.', embeds: [], components: [] });
     return;
   }
 
   if (questions.length === 0) {
-    await interaction.reply({ content: '❌ No questions have been added yet.', ephemeral: true });
+    await respond(interaction, { content: '❌ No questions have been added yet.', embeds: [], components: [] });
     return;
   }
 
@@ -860,20 +892,21 @@ async function showEditQuestionList(interaction, guildId, page) {
     new ButtonBuilder().setCustomId('training_qm_back').setLabel('◀ Back').setStyle(ButtonStyle.Secondary),
   );
 
-  await interaction.update({ content: 'Select a question to edit:', embeds: [], components: [row, backRow] });
+  await respond(interaction, { content: 'Select a question to edit:', embeds: [], components: [row, backRow] }, true);
 }
 
 async function showDeleteQuestionList(interaction, guildId, page) {
+  await ensureDeferred(interaction);
   let questions;
   try {
     questions = await TrainingQuestion.find({ guildId }).sort({ createdAt: 1 }).lean();
   } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await respond(interaction, { content: '❌ Database error.', embeds: [], components: [] });
     return;
   }
 
   if (questions.length === 0) {
-    await interaction.reply({ content: '❌ No questions have been added yet.', ephemeral: true });
+    await respond(interaction, { content: '❌ No questions have been added yet.', embeds: [], components: [] });
     return;
   }
 
@@ -893,7 +926,7 @@ async function showDeleteQuestionList(interaction, guildId, page) {
     new ButtonBuilder().setCustomId('training_qm_back').setLabel('◀ Back').setStyle(ButtonStyle.Secondary),
   );
 
-  await interaction.update({ content: 'Select a question to delete:', embeds: [], components: [row, backRow] });
+  await respond(interaction, { content: 'Select a question to delete:', embeds: [], components: [row, backRow] }, true);
 }
 
 async function startEditQuestion(interaction, guildId, questionId) {
@@ -950,16 +983,17 @@ async function startEditQuestion(interaction, guildId, questionId) {
 }
 
 async function showDeleteConfirmation(interaction, questionId, guildId) {
+  await ensureDeferred(interaction);
   let question;
   try {
     question = await TrainingQuestion.findById(questionId).lean();
   } catch {
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await respond(interaction, { content: '❌ Database error.', embeds: [], components: [] });
     return;
   }
 
   if (!question) {
-    await interaction.reply({ content: '❌ That question no longer exists.', ephemeral: true });
+    await respond(interaction, { content: '❌ That question no longer exists.', embeds: [], components: [] });
     return;
   }
 
@@ -973,18 +1007,18 @@ async function showDeleteConfirmation(interaction, questionId, guildId) {
     new ButtonBuilder().setCustomId('training_del_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
   );
 
-  await interaction.update({ embeds: [embed], components: [row] });
+  await respond(interaction, { embeds: [embed], components: [row] }, true);
 }
 
 async function handleDeleteConfirm(interaction, questionId, guildId) {
+  await interaction.deferUpdate();
   try {
     await TrainingQuestion.findByIdAndDelete(questionId);
   } catch (err) {
     console.error('[TRAINING SETUP] Failed to delete question:', err.message);
-    await interaction.reply({ content: '❌ Database error.', ephemeral: true });
+    await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
     return;
   }
 
-  await interaction.update({ content: '✅ Question deleted successfully!', embeds: [], components: [] });
   await showQuestionManagement(interaction, guildId, true);
 }
