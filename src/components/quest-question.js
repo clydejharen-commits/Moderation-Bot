@@ -7,10 +7,10 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
+import { PermissionFlagsBits } from 'discord.js';
 import { QuestQuestion } from '../db/models/QuestQuestion.js';
 import { QuestAnswer } from '../db/models/QuestAnswer.js';
 import { QuestConfig } from '../db/models/QuestConfig.js';
-import { PermissionFlagsBits } from 'discord.js';
 
 export function isQuestAnswerButton(customId) {
   return customId.startsWith('quest_answer:');
@@ -148,6 +148,45 @@ function buildQuestionEmbed(questionText, totalTrainees, answeredCount) {
     .setFooter({ text: 'Click the Answer button to submit your response.' });
 }
 
+async function recalcEligibleTrainees(client, guildId, questionId) {
+  let question;
+  try {
+    question = await QuestQuestion.findById(questionId).lean();
+  } catch {
+    return null;
+  }
+
+  if (!question || question.status !== 'active') return null;
+
+  let config;
+  try {
+    config = await QuestConfig.findOne({ guildId }).lean();
+  } catch {
+    return null;
+  }
+
+  if (!config) return question;
+
+  let guild;
+  try {
+    guild = await client.guilds.fetch(guildId);
+  } catch {
+    return question;
+  }
+
+  const newEligible = await resolveEligibleTrainees(guild, config);
+
+  try {
+    await QuestQuestion.findByIdAndUpdate(questionId, {
+      eligibleTrainees: newEligible,
+    });
+  } catch {
+    // non-fatal
+  }
+
+  return { ...question, eligibleTrainees: newEligible };
+}
+
 export async function handleAnswerButton(interaction) {
   const questionId = interaction.customId.split(':')[1];
 
@@ -185,8 +224,13 @@ export async function handleAnswerButton(interaction) {
   }
 
   if (!question.eligibleTrainees.includes(interaction.user.id)) {
-    await interaction.reply({ content: '❌ You are not assigned as a trainee for this question.', ephemeral: true });
-    return;
+    const recalc = await recalcEligibleTrainees(interaction.client, interaction.guild.id, questionId);
+    if (recalc && recalc.eligibleTrainees.includes(interaction.user.id)) {
+      question = recalc;
+    } else {
+      await interaction.reply({ content: '❌ You are not assigned as a trainee for this question.', ephemeral: true });
+      return;
+    }
   }
 
   if (question.answeredTrainees.includes(interaction.user.id)) {
@@ -227,8 +271,13 @@ export async function handleAnswerModal(interaction) {
   }
 
   if (!question.eligibleTrainees.includes(interaction.user.id)) {
-    await interaction.reply({ content: '❌ You are not assigned as a trainee for this question.', ephemeral: true });
-    return;
+    const recalc = await recalcEligibleTrainees(interaction.client, interaction.guild.id, questionId);
+    if (recalc && recalc.eligibleTrainees.includes(interaction.user.id)) {
+      question = recalc;
+    } else {
+      await interaction.reply({ content: '❌ You are not assigned as a trainee for this question.', ephemeral: true });
+      return;
+    }
   }
 
   if (question.answeredTrainees.includes(interaction.user.id)) {
@@ -278,6 +327,11 @@ async function checkAllAnswered(client, guildId, questionId) {
 
   if (!question || question.status !== 'active') return;
 
+  const recalc = await recalcEligibleTrainees(client, guildId, questionId);
+  if (recalc) {
+    question = recalc;
+  }
+
   if (question.answeredTrainees.length >= question.eligibleTrainees.length) {
     await endQuestion(client, guildId, questionId, 'auto', null);
   }
@@ -292,6 +346,11 @@ export async function endQuestion(client, guildId, questionId, reason, endedBy) 
   }
 
   if (!question || question.status !== 'active') return false;
+
+  const recalc = await recalcEligibleTrainees(client, guildId, questionId);
+  if (recalc) {
+    question = recalc;
+  }
 
   try {
     await QuestQuestion.findByIdAndUpdate(questionId, {
@@ -345,6 +404,19 @@ export async function endQuestion(client, guildId, questionId, reason, endedBy) 
   return true;
 }
 
+function resolveUsername(userId, client) {
+  let user = null;
+  try {
+    user = client.users.cache.get(userId);
+  } catch {
+    // ignore
+  }
+  if (!user) {
+    return `<@${userId}>`;
+  }
+  return `@${user.username}`;
+}
+
 function buildResultsEmbed(question, answers, reason, endedBy, client) {
   const answerMap = new Map();
   for (const a of answers) {
@@ -382,7 +454,7 @@ function buildResultsEmbed(question, answers, reason, endedBy, client) {
       const username = resolveUsername(id, client);
       return `${username}`;
     });
-    embed.addFields({ name: 'No Answer', value: noAnswerLines.join('\n').slice(0, 1024), inline: false });
+    embed.addFields({ name: 'Did Not Answer', value: noAnswerLines.join('\n').slice(0, 1024), inline: false });
   }
 
   if (!isAuto && endedBy) {
@@ -393,19 +465,6 @@ function buildResultsEmbed(question, answers, reason, endedBy, client) {
   }
 
   return embed;
-}
-
-function resolveUsername(userId, client) {
-  let user = null;
-  try {
-    user = client.users.cache.get(userId);
-  } catch {
-    // ignore
-  }
-  if (!user) {
-    return `<@${userId}>`;
-  }
-  return `@${user.username}`;
 }
 
 export async function restoreActiveQuestion(client, guildId) {

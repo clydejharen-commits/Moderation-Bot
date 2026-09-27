@@ -21,6 +21,7 @@ import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
 import { data as questData, execute as questExecute } from './commands/quest.js';
 import { data as questionData, execute as questionExecute } from './commands/question.js';
 import { data as addData, execute as addExecute } from './commands/add.js';
+import { data as takeData, execute as takeExecute } from './commands/take.js';
 import { data as staffData, execute as staffExecute } from './commands/staff.js';
 import { handleBotProfilePrefix } from './commands/bot-profile-prefix.js';
 import {
@@ -85,6 +86,7 @@ const slashCommands = [
   questData,
   questionData,
   addData,
+  takeData,
   staffData,
 ];
 
@@ -110,6 +112,7 @@ for (const cmd of slashCommands) {
     'quest': questExecute,
     'question': questionExecute,
     'add': addExecute,
+    'take': takeExecute,
     'staff': staffExecute,
   }[cmd.name]);
 }
