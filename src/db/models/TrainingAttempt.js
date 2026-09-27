@@ -5,10 +5,14 @@ const { Schema, model } = mongoose;
 const answerSchema = new Schema(
   {
     questionText: { type: String, required: true },
+    questionType: { type: String, default: null },
     traineeAnswer: { type: String, default: null },
-    correctAnswer: { type: String, required: true },
-    isCorrect: { type: Boolean, required: true },
+    correctAnswer: { type: String, default: null },
+    referenceAnswer: { type: String, default: null },
+    isCorrect: { type: Boolean, default: null },
+    trainerDecision: { type: String, enum: ['correct', 'incorrect'], default: null },
     timedOut: { type: Boolean, default: false },
+    reviewed: { type: Boolean, default: false },
   },
   { _id: false },
 );

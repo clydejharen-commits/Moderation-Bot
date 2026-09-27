@@ -9,10 +9,11 @@ const trainingQuestionSchema = new Schema(
     questionType: {
       type: String,
       required: true,
-      enum: ['multiple_choice', 'true_false', 'situation'],
+      enum: ['multiple_choice', 'situation', 'explanation_answer'],
     },
     choices: { type: [String], default: [] },
-    correctAnswer: { type: String, required: true },
+    correctAnswer: { type: String, default: null },
+    referenceAnswer: { type: String, default: null, maxlength: 2000 },
     explanation: { type: String, default: null, maxlength: 1000 },
   },
   { timestamps: true },
