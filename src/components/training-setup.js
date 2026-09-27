@@ -17,7 +17,6 @@ import { TrainingQuestion } from '../db/models/TrainingQuestion.js';
 
 const MAX_QUESTIONS = 100;
 const SITUATION_CHOICES = ['Warn', 'Mute', 'Call Higher-Up', 'Do Nothing'];
-const TF_CHOICES = ['True', 'False'];
 
 const setupPanels = new Map();
 const questionWizards = new Map();
@@ -472,6 +471,55 @@ export async function handleTrainingSetupModal(interaction) {
     await showCorrectAnswerSelect(interaction, choices, true);
     return;
   }
+
+  if (customId === 'training_modal_reference') {
+    const wizard = getWizard(userId, channelId);
+    if (!wizard) {
+      await interaction.reply({ content: '❌ The question wizard has expired. Please start again.', ephemeral: true });
+      return;
+    }
+
+    const referenceAnswer = interaction.fields.getTextInputValue('training_reference_value')?.trim() || null;
+    wizard.referenceAnswer = referenceAnswer;
+
+    if (wizard.mode === 'add') {
+      try {
+        await TrainingQuestion.create({
+          guildId: panel.guildId,
+          questionText: wizard.questionText,
+          questionType: wizard.questionType,
+          choices: [],
+          correctAnswer: null,
+          referenceAnswer,
+          explanation: wizard.explanation,
+        });
+      } catch (err) {
+        console.error('[TRAINING SETUP] Failed to create explanation question:', err.message);
+        await interaction.reply({ content: '❌ Database error. Failed to save the question.', ephemeral: true });
+        return;
+      }
+    } else if (wizard.mode === 'edit') {
+      try {
+        await TrainingQuestion.findByIdAndUpdate(wizard.questionId, {
+          questionText: wizard.questionText,
+          questionType: wizard.questionType,
+          choices: [],
+          correctAnswer: null,
+          referenceAnswer,
+          explanation: wizard.explanation,
+        });
+      } catch (err) {
+        console.error('[TRAINING SETUP] Failed to update explanation question:', err.message);
+        await interaction.reply({ content: '❌ Database error. Failed to update the question.', ephemeral: true });
+        return;
+      }
+    }
+
+    deleteWizard(userId, channelId);
+    await interaction.deferUpdate();
+    await showQuestionManagement(interaction, panel.guildId, true);
+    return;
+  }
 }
 
 async function getOrCreateConfig(guildId) {
@@ -664,8 +712,8 @@ async function showQuestionTypeSelect(interaction) {
     .setPlaceholder('Select question type')
     .addOptions(
       { label: 'Multiple Choice', value: 'multiple_choice', description: '2-4 custom answer choices' },
-      { label: 'True / False', value: 'true_false', description: 'True or False as the choices' },
       { label: 'Situation', value: 'situation', description: 'Warn, Mute, Call Higher-Up, Do Nothing' },
+      { label: 'Explanation Answer', value: 'explanation_answer', description: 'Trainee writes a free-text answer, reviewed by trainer' },
     );
 
   const row = new ActionRowBuilder().addComponents(select);
@@ -678,8 +726,8 @@ async function showEditTypeSelect(interaction) {
     .setPlaceholder('Select question type')
     .addOptions(
       { label: 'Multiple Choice', value: 'multiple_choice', description: '2-4 custom answer choices' },
-      { label: 'True / False', value: 'true_false', description: 'True or False as the choices' },
       { label: 'Situation', value: 'situation', description: 'Warn, Mute, Call Higher-Up, Do Nothing' },
+      { label: 'Explanation Answer', value: 'explanation_answer', description: 'Trainee writes a free-text answer, reviewed by trainer' },
     );
 
   const row = new ActionRowBuilder().addComponents(select);
@@ -697,12 +745,15 @@ async function handleQuestionTypeSelect(interaction, customId, guildId) {
 
   wizard.questionType = questionType;
 
-  if (questionType === 'multiple_choice') {
+  if (questionType === 'explanation_answer') {
+    wizard.choices = [];
+    wizard.correctAnswer = null;
+    await showReferenceAnswerModal(interaction, mode);
+  } else if (questionType === 'multiple_choice') {
     await showChoicesModal(interaction, mode);
   } else {
-    const choices = questionType === 'true_false' ? TF_CHOICES : SITUATION_CHOICES;
-    wizard.choices = choices;
-    await showCorrectAnswerSelect(interaction, choices, mode === 'edit');
+    wizard.choices = [...SITUATION_CHOICES];
+    await showCorrectAnswerSelect(interaction, SITUATION_CHOICES, mode === 'edit');
   }
 }
 
@@ -728,6 +779,30 @@ async function showChoicesModal(interaction, mode) {
 
     modal.addComponents(new ActionRowBuilder().addComponents(input));
   }
+
+  await interaction.showModal(modal);
+}
+
+async function showReferenceAnswerModal(interaction, mode) {
+  const title = mode === 'edit' ? 'Edit Question — Reference Answer' : 'Add Question — Final Step';
+  const modalId = 'training_modal_reference';
+  const wizard = getWizard(interaction.user.id, interaction.channelId);
+
+  const modal = new ModalBuilder().setCustomId(modalId).setTitle(title);
+
+  const input = new TextInputBuilder()
+    .setCustomId('training_reference_value')
+    .setLabel('Reference / Expected Answer')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(2000)
+    .setPlaceholder('The expected answer, shown to the trainer during review...');
+
+  if (wizard?.referenceAnswer) {
+    input.setValue(wizard.referenceAnswer);
+  }
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
 
   await interaction.showModal(modal);
 }
@@ -836,13 +911,16 @@ async function showQuestionList(interaction, guildId, page) {
     const num = startIdx + i + 1;
     const typeLabel = {
       multiple_choice: 'MC',
-      true_false: 'T/F',
       situation: 'Sit',
+      explanation_answer: 'Exp',
     }[q.questionType] || 'Q';
 
+    const isExplanation = q.questionType === 'explanation_answer';
+    const choicesLine = isExplanation ? '*(free-text answer)*' : q.choices.join(' | ');
+    const correctLine = isExplanation ? `**Reference:** ||${q.referenceAnswer || 'N/A'}||` : `**Correct:** ||${q.correctAnswer}||`;
     embed.addFields({
       name: `${num}. [${typeLabel}] ${q.questionText.slice(0, 80)}${q.questionText.length > 80 ? '...' : ''}`,
-      value: `**Choices:** ${q.choices.join(' | ')}\n**Correct:** ||${q.correctAnswer}||${q.explanation ? `\n**Explanation:** ${q.explanation.slice(0, 100)}` : ''}`,
+      value: `**Choices:** ${choicesLine}\n${correctLine}${q.explanation ? `\n**Explanation:** ${q.explanation.slice(0, 100)}` : ''}`,
       inline: false,
     });
   }
@@ -951,6 +1029,7 @@ async function startEditQuestion(interaction, guildId, questionId) {
     questionType: question.questionType,
     choices: question.choices,
     correctAnswer: question.correctAnswer,
+    referenceAnswer: question.referenceAnswer,
     explanation: question.explanation,
   });
 
