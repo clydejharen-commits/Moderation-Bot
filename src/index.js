@@ -36,6 +36,8 @@ import {
   isTrainingButton,
   handleTrainingButton,
   isTrainingPaginationButton,
+  isTrainingExplanationModal,
+  handleExplanationModal,
   getLeaderboardState,
   setLeaderboardState,
   buildLeaderboardEmbed,
@@ -252,6 +254,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isTrainingSetupModal(interaction.customId)) {
         await handleTrainingSetupModal(interaction);
+        return;
+      }
+      if (isTrainingExplanationModal(interaction.customId)) {
+        await handleExplanationModal(interaction);
         return;
       }
     }
