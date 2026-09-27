@@ -19,6 +19,7 @@ import {
   stopTrainingSession,
   getActiveSession,
   hasActiveSession,
+  getActiveSessionByTrainer,
   buildLeaderboardEmbed,
   buildLeaderboardPagination,
   setLeaderboardState,
@@ -38,7 +39,14 @@ export const data = new SlashCommandBuilder()
         opt.setName('user').setDescription('The staff member to train.').setRequired(true),
       ),
   )
-  .addSubcommand((sub) => sub.setName('stop').setDescription('Stop an active training session.'))
+  .addSubcommand((sub) =>
+    sub
+      .setName('stop')
+      .setDescription('Stop an active training session.')
+      .addUserOption((opt) =>
+        opt.setName('user').setDescription('The staff member whose training to stop. If omitted, stops your most recent session.').setRequired(false),
+      ),
+  )
   .addSubcommand((sub) =>
     sub
       .setName('results')
@@ -175,12 +183,6 @@ async function handleStart(interaction, config) {
     return;
   }
 
-  const existingSession = getActiveSession(interaction.guild.id);
-  if (existingSession) {
-    await interaction.reply({ content: `❌ There is already an active training session for <@${existingSession.traineeId}>. Stop it first with \`/training stop\`.`, ephemeral: true });
-    return;
-  }
-
   let questionCount;
   try {
     questionCount = await TrainingQuestion.countDocuments({ guildId: interaction.guild.id });
@@ -224,15 +226,32 @@ async function handleStop(interaction, config) {
     return;
   }
 
-  const session = getActiveSession(interaction.guild.id);
-  if (!session) {
-    await interaction.reply({ content: '❌ There is no active training session to stop.', ephemeral: true });
+  const trainee = interaction.options.getUser('user');
+
+  let targetTraineeId = null;
+  if (trainee) {
+    targetTraineeId = trainee.id;
+  } else {
+    const sessionByTrainer = getActiveSessionByTrainer(interaction.guild.id, interaction.user.id);
+    if (sessionByTrainer) {
+      targetTraineeId = sessionByTrainer.traineeId;
+    }
+  }
+
+  if (!targetTraineeId) {
+    await interaction.reply({ content: '❌ No active training session found. Specify a user or ensure you started a session.', ephemeral: true });
     return;
   }
 
-  const stopped = await stopTrainingSession(interaction.guild.id);
+  const session = getActiveSession(interaction.guild.id, targetTraineeId);
+  if (!session) {
+    await interaction.reply({ content: `❌ There is no active training session for <@${targetTraineeId}>.`, ephemeral: true });
+    return;
+  }
+
+  const stopped = await stopTrainingSession(interaction.guild.id, targetTraineeId);
   if (stopped) {
-    await interaction.reply({ content: '✅ Training session stopped and marked as **Cancelled**.', ephemeral: true });
+    await interaction.reply({ content: `✅ Training session for <@${targetTraineeId}> stopped and marked as **Cancelled**.`, ephemeral: true });
   } else {
     await interaction.reply({ content: '❌ Failed to stop the training session.', ephemeral: true });
   }
