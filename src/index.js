@@ -18,6 +18,7 @@ import { data as vouchData, execute as vouchExecute } from './commands/vouch.js'
 import { data as dmData, execute as dmExecute } from './commands/dm.js';
 import { data as closeData, execute as closeExecute, autocomplete as closeAutocomplete } from './commands/close-button.js';
 import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
+import { data as trainingData, execute as trainingExecute } from './commands/training.js';
 import { handleBotProfilePrefix } from './commands/bot-profile-prefix.js';
 import {
   handleFollowerButton,
@@ -31,6 +32,24 @@ import { handleControlButton, handleControlModal, isControlButton, isControlModa
 import { handleQueueButton, isQueueButton } from './components/queue-panel.js';
 import { handleTicketSelect, handleTicketModal, isTicketSelect, isTicketModal } from './components/ticket-panel.js';
 import { handleVouchButton, handleVouchModal, isVouchButton, isVouchModal } from './components/vouch-panel.js';
+import {
+  isTrainingButton,
+  handleTrainingButton,
+  isTrainingPaginationButton,
+  getLeaderboardState,
+  setLeaderboardState,
+  buildLeaderboardEmbed,
+  buildLeaderboardPagination,
+} from './components/training-session.js';
+import {
+  isTrainingSetupButton,
+  isTrainingSetupModal,
+  isTrainingSetupSelect,
+  handleTrainingSetupButton,
+  handleTrainingSetupModal,
+  handleTrainingSetupSelect,
+} from './components/training-setup.js';
+import { handleRemoveHistoryButton } from './commands/training.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
@@ -63,6 +82,7 @@ const slashCommands = [
   vouchData,
   dmData,
   closeData,
+  trainingData,
 ];
 
 const commandMap = new Map();
@@ -84,6 +104,7 @@ for (const cmd of slashCommands) {
     vouch: vouchExecute,
     dm: dmExecute,
     'close': closeExecute,
+    'training': trainingExecute,
   }[cmd.name]);
 }
 
@@ -134,6 +155,29 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
+async function handleLeaderboardPagination(interaction) {
+  const state = getLeaderboardState(interaction.message.id);
+  if (!state) {
+    await interaction.reply({ content: '❌ This leaderboard has expired. Run `/training leaderboard` again.', ephemeral: true });
+    return;
+  }
+
+  const pageSize = 10;
+  const totalPages = Math.ceil(state.entries.length / pageSize) || 1;
+  const newPage = interaction.customId === 'training_lb_prev' ? state.page - 1 : state.page + 1;
+
+  if (newPage < 0 || newPage >= totalPages) return;
+
+  const embed = await buildLeaderboardEmbed(state.entries, newPage, interaction.client);
+  const paginationRow = buildLeaderboardPagination(newPage, totalPages);
+
+  const components = [];
+  if (paginationRow) components.push(paginationRow);
+
+  await interaction.update({ embeds: [embed], components });
+  setLeaderboardState(interaction.message.id, state.entries, newPage);
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (interaction.isAutocomplete()) {
@@ -171,6 +215,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleVouchButton(interaction);
         return;
       }
+      if (isTrainingButton(interaction.customId)) {
+        await handleTrainingButton(interaction);
+        return;
+      }
+      if (isTrainingSetupButton(interaction.customId)) {
+        await handleTrainingSetupButton(interaction);
+        return;
+      }
+      if (interaction.customId.startsWith('training_del_history_')) {
+        await handleRemoveHistoryButton(interaction);
+        return;
+      }
+      if (isTrainingPaginationButton(interaction.customId)) {
+        await handleLeaderboardPagination(interaction);
+        return;
+      }
     }
 
     if (interaction.isModalSubmit()) {
@@ -190,6 +250,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleVouchModal(interaction);
         return;
       }
+      if (isTrainingSetupModal(interaction.customId)) {
+        await handleTrainingSetupModal(interaction);
+        return;
+      }
     }
 
     if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu()) {
@@ -199,6 +263,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isTicketSelect(interaction.customId)) {
         await handleTicketSelect(interaction);
+        return;
+      }
+      if (isTrainingSetupSelect(interaction.customId)) {
+        await handleTrainingSetupSelect(interaction);
         return;
       }
     }
