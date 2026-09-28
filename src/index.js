@@ -20,6 +20,10 @@ import { data as closeData, execute as closeExecute, autocomplete as closeAutoco
 import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
 import { handleBotProfilePrefix } from './commands/bot-profile-prefix.js';
 import { data as questData, execute as questExecute } from './commands/quest.js';
+import { data as questionData, execute as questionExecute } from './commands/question.js';
+import { data as addData, execute as addExecute } from './commands/add.js';
+import { data as takeData, execute as takeExecute } from './commands/take.js';
+import { data as staffData, execute as staffExecute } from './commands/staff.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -40,8 +44,16 @@ import {
   isQuestSelect,
   isQuestModal,
 } from './components/quest-panel.js';
-import { connectDatabase, disconnectDatabase } from './db/database.js';
+import {
+  handleQuestionButton,
+  handleQuestionModal,
+  isQuestionButton,
+  isQuestionModal,
+} from './components/question-panel.js';
+import { connectDatabase, disconnectDatabase, isDatabaseConnected } from './db/database.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
+import { ActiveQuestion } from './db/models/ActiveQuestion.js';
+import { buildQuestionEmbed, buildQuestionButtons } from './components/question-panel.js';
 
 const client = new Client({
   intents: [
@@ -73,6 +85,10 @@ const slashCommands = [
   dmData,
   closeData,
   questData,
+  questionData,
+  addData,
+  takeData,
+  staffData,
 ];
 
 const commandMap = new Map();
@@ -95,6 +111,10 @@ for (const cmd of slashCommands) {
     dm: dmExecute,
     'close': closeExecute,
     quest: questExecute,
+    question: questionExecute,
+    add: addExecute,
+    take: takeExecute,
+    staff: staffExecute,
   }[cmd.name]);
 }
 
@@ -117,7 +137,50 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   startTrackerChecker(readyClient);
 
+  await restoreActiveQuestions(readyClient);
 });
+
+async function restoreActiveQuestions(readyClient) {
+  if (!isDatabaseConnected()) return;
+
+  let activeQuestions;
+  try {
+    activeQuestions = await ActiveQuestion.find({ completed: false }).lean();
+  } catch (err) {
+    console.error('[RESTORE] Failed to fetch active questions:', err.message);
+    return;
+  }
+
+  if (!activeQuestions || activeQuestions.length === 0) return;
+
+  console.log(`[RESTORE] Found ${activeQuestions.length} active question(s). Restoring...`);
+
+  for (const q of activeQuestions) {
+    try {
+      if (!q.channelId || !q.messageId) continue;
+
+      const guild = readyClient.guilds.cache.get(q.guildId);
+      if (!guild) continue;
+
+      const channel = await guild.channels.fetch(q.channelId).catch(() => null);
+      if (!channel) continue;
+
+      const embed = buildQuestionEmbed(q);
+      const buttons = buildQuestionButtons();
+
+      const questionMsg = await channel.messages.fetch(q.messageId).catch(() => null);
+      if (questionMsg) {
+        await questionMsg.edit({ embeds: [embed], components: buttons });
+      } else {
+        await channel.send({ embeds: [embed], components: buttons });
+      }
+    } catch (err) {
+      console.error(`[RESTORE] Failed to restore question ${q.questionId}:`, err.message);
+    }
+  }
+
+  console.log('[RESTORE] Active question restoration complete.');
+}
 
 client.on(Events.MessageCreate, async (message) => {
   try {
@@ -187,6 +250,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleQuestButton(interaction);
         return;
       }
+      if (isQuestionButton(interaction.customId)) {
+        await handleQuestionButton(interaction);
+        return;
+      }
     }
 
     if (interaction.isModalSubmit()) {
@@ -208,6 +275,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isQuestModal(interaction.customId)) {
         await handleQuestModal(interaction);
+        return;
+      }
+      if (isQuestionModal(interaction.customId)) {
+        await handleQuestionModal(interaction);
         return;
       }
     }
