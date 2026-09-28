@@ -8,8 +8,9 @@ const staffMemberSchema = new Schema(
     userId: { type: String, required: true },
     username: { type: String, default: '' },
     totalPoints: { type: Number, default: 0 },
-    promoteCoins: { type: Number, default: 0 },
-    status: { type: String, enum: ['promotion', 'demotion'], default: 'demotion' },
+    token: { type: Number, default: 0 },
+    status: { type: String, enum: ['promotion', 'normal', 'demotion'], default: 'demotion' },
+    dailyMessageCount: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

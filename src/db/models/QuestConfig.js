@@ -9,9 +9,26 @@ const questConfigSchema = new Schema(
     traineeRoleIds: { type: [String], default: [] },
     trainerUserIds: { type: [String], default: [] },
     trainerRoleIds: { type: [String], default: [] },
-    pointsPerPromoteCoin: { type: Number, default: 5 },
-    promoteCoinsForPromotion: { type: Number, default: 15 },
-    promoteCoinsForDemotion: { type: Number, default: -5 },
+    // Message tracking
+    trackedUserIds: { type: [String], default: [] },
+    trackedChannelIds: { type: [String], default: [] },
+    // Daily message requirement
+    requiredDailyMessages: { type: Number, default: 50 },
+    pointsIfMet: { type: Number, default: 5 },
+    pointsIfNotMet: { type: Number, default: -3 },
+    lastDailyEvalDate: { type: String, default: '' },
+    // Token settings
+    pointsPerToken: { type: Number, default: 5 },
+    // Token ranges
+    demotionMin: { type: Number, default: 0 },
+    demotionMax: { type: Number, default: 20 },
+    normalMin: { type: Number, default: 21 },
+    normalMax: { type: Number, default: 49 },
+    promotionMin: { type: Number, default: 50 },
+    promotionMax: { type: Number, default: 999999 },
+    // Leaderboard
+    leaderboardChannelId: { type: String, default: '' },
+    leaderboardMessageId: { type: String, default: '' },
   },
   { timestamps: true },
 );

@@ -5,10 +5,9 @@ import {
   getQuestConfig,
   isTrainerOrAdmin,
   recalculateStaffMember,
-  calculatePromoteCoins,
-  calculateStatus,
   statusLabel,
 } from '../utils/questHelpers.js';
+import { updateLeaderboard } from '../utils/leaderboardManager.js';
 
 export const data = new SlashCommandBuilder()
   .setName('add')
@@ -16,7 +15,7 @@ export const data = new SlashCommandBuilder()
   .addSubcommand((sub) =>
     sub
       .setName('points')
-      .setDescription('Add points to a user and recalculate Promote Coins / status.')
+      .setDescription('Add points to a user and recalculate Token / status.')
       .addUserOption((opt) =>
         opt.setName('user').setDescription('The user to add points to.').setRequired(true),
       )
@@ -91,8 +90,10 @@ export async function execute(interaction) {
     return;
   }
 
+  await updateLeaderboard(interaction.client, interaction.guild.id);
+
   await interaction.reply({
-    content: `\u2705 Added **${pointsToAdd}** point(s) to <@${targetUser.id}>.\n**Total Points:** ${recalculated.totalPoints}\n**Promote Coins:** ${recalculated.promoteCoins}\n**Status:** ${statusLabel(recalculated.status)}`,
+    content: `\u2705 Added **${pointsToAdd}** point(s) to <@${targetUser.id}>.\n**Total Points:** ${recalculated.totalPoints}\n**Token:** ${recalculated.token}\n**Status:** ${statusLabel(recalculated.status)}`,
     ephemeral: false,
   });
 }
