@@ -8,44 +8,9 @@ import {
   TextInputStyle,
   UserSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
 } from 'discord.js';
 import { QuestConfig } from '../db/models/QuestConfig.js';
-
-const setupPanels = new Map();
-
-function panelKey(userId, channelId) {
-  return `${userId}:${channelId}`;
-}
-
-function getPanel(userId, channelId) {
-  return setupPanels.get(panelKey(userId, channelId)) || null;
-}
-
-function setPanel(userId, channelId, guildId) {
-  setupPanels.set(panelKey(userId, channelId), { userId, channelId, guildId });
-}
-
-function deletePanel(userId, channelId) {
-  setupPanels.delete(panelKey(userId, channelId));
-}
-
-export function isQuestSetupButton(customId) {
-  return customId.startsWith('quest_setup_') ||
-    customId.startsWith('quest_select_') ||
-    customId.startsWith('quest_remove_');
-}
-
-export function isQuestSetupModal(customId) {
-  return customId.startsWith('quest_modal_');
-}
-
-export function isQuestSetupSelect(customId) {
-  return customId.startsWith('quest_select_') || customId.startsWith('quest_remove_');
-}
-
-export function registerQuestSetup(userId, channelId, guildId) {
-  setPanel(userId, channelId, guildId);
-}
 
 async function getOrCreateConfig(guildId) {
   let config = await QuestConfig.findOne({ guildId }).lean();
@@ -69,11 +34,7 @@ function formatRoleList(roles) {
   return roles.map((id) => `<@&${id}>`).join(', ');
 }
 
-export function buildMainPanelForCommand(config) {
-  return buildMainPanel(config);
-}
-
-function buildMainPanel(config) {
+export function buildMainPanel(config) {
   const embed = new EmbedBuilder()
     .setTitle('Quest System Setup')
     .setColor(0x2ECC71)
@@ -89,23 +50,23 @@ function buildMainPanel(config) {
     .setFooter({ text: 'Only you can interact with this panel.' });
 
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('quest_setup_trainee_users_add').setLabel('➕ Trainee Users').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('quest_setup_trainee_users_remove').setLabel('➖ Remove Trainee User').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('quest_setup_add_trainee_users').setLabel('➕ Trainee Users').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('quest_setup_remove_trainee_users').setLabel('➖ Remove').setStyle(ButtonStyle.Danger),
   );
 
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('quest_setup_trainee_roles_add').setLabel('➕ Trainee Roles').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('quest_setup_trainee_roles_remove').setLabel('➖ Remove Trainee Role').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('quest_setup_add_trainee_roles').setLabel('➕ Trainee Roles').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('quest_setup_remove_trainee_roles').setLabel('➖ Remove').setStyle(ButtonStyle.Danger),
   );
 
   const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('quest_setup_trainer_users_add').setLabel('➕ Trainer Users').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('quest_setup_trainer_users_remove').setLabel('➖ Remove Trainer User').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('quest_setup_add_trainer_users').setLabel('➕ Trainer Users').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('quest_setup_remove_trainer_users').setLabel('➖ Remove').setStyle(ButtonStyle.Danger),
   );
 
   const row4 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('quest_setup_trainer_roles_add').setLabel('➕ Trainer Roles').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('quest_setup_trainer_roles_remove').setLabel('➖ Remove Trainer Role').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('quest_setup_add_trainer_roles').setLabel('➕ Trainer Roles').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('quest_setup_remove_trainer_roles').setLabel('➖ Remove').setStyle(ButtonStyle.Danger),
   );
 
   const row5 = new ActionRowBuilder().addComponents(
@@ -122,98 +83,76 @@ function buildMainPanel(config) {
   return { embeds: [embed], components: [row1, row2, row3, row4, row5, row6] };
 }
 
-async function refreshPanel(interaction, guildId) {
-  const config = await getOrCreateConfig(guildId);
-  const panelData = buildMainPanel(config);
-  await interaction.editReply({ ...panelData });
+export function isQuestSetupButton(customId) {
+  return customId.startsWith('quest_setup_');
 }
 
-export async function handleQuestSetupButton(interaction) {
-  const customId = interaction.customId;
-  const userId = interaction.user.id;
-  const channelId = interaction.channelId;
-
-  if (customId === 'quest_setup_cancel') {
-    deletePanel(userId, channelId);
-    await interaction.update({ embeds: [], components: [], content: '❌ Quest setup cancelled.' });
-    return;
-  }
-
-  if (customId === 'quest_setup_done') {
-    deletePanel(userId, channelId);
-    await interaction.update({ embeds: [], components: [], content: '✅ Quest setup complete. All settings have been saved.' });
-    return;
-  }
-
-  const panel = getPanel(userId, channelId);
-  if (!panel) {
-    await interaction.reply({ content: '❌ This panel is no longer active.', ephemeral: true });
-    return;
-  }
-
-  switch (customId) {
-    case 'quest_setup_trainee_users_add':
-      await showUserSelect(interaction, 'quest_select_trainee_users', 'Add Trainee Users', 'Select users to add as trainees');
-      break;
-    case 'quest_setup_trainee_roles_add':
-      await showRoleSelect(interaction, 'quest_select_trainee_roles', 'Add Trainee Roles', 'Select roles to add as trainee roles');
-      break;
-    case 'quest_setup_trainer_users_add':
-      await showUserSelect(interaction, 'quest_select_trainer_users', 'Add Trainer Users', 'Select users to add as trainers');
-      break;
-    case 'quest_setup_trainer_roles_add':
-      await showRoleSelect(interaction, 'quest_select_trainer_roles', 'Add Trainer Roles', 'Select roles to add as trainer roles');
-      break;
-
-    case 'quest_setup_trainee_users_remove':
-      await showRemoveUserSelect(interaction, panel.guildId, 'traineeUsers', 'quest_remove_trainee_users', 'Remove Trainee Users', 'Select trainee users to remove');
-      break;
-    case 'quest_setup_trainee_roles_remove':
-      await showRemoveRoleSelect(interaction, panel.guildId, 'traineeRoles', 'quest_remove_trainee_roles', 'Remove Trainee Roles', 'Select trainee roles to remove');
-      break;
-    case 'quest_setup_trainer_users_remove':
-      await showRemoveUserSelect(interaction, panel.guildId, 'trainerUsers', 'quest_remove_trainer_users', 'Remove Trainer Users', 'Select trainer users to remove');
-      break;
-    case 'quest_setup_trainer_roles_remove':
-      await showRemoveRoleSelect(interaction, panel.guildId, 'trainerRoles', 'quest_remove_trainer_roles', 'Remove Trainer Roles', 'Select trainer roles to remove');
-      break;
-
-    case 'quest_setup_points_per_coin':
-      await showCoinModal(interaction, panel.guildId, 'points_per_coin');
-      break;
-    case 'quest_setup_coins_promotion':
-      await showCoinModal(interaction, panel.guildId, 'coins_promotion');
-      break;
-    case 'quest_setup_coins_demotion':
-      await showCoinModal(interaction, panel.guildId, 'coins_demotion');
-      break;
-  }
+export function isQuestSetupModal(customId) {
+  return customId.startsWith('quest_modal_');
 }
 
-async function showUserSelect(interaction, customId, title, placeholder) {
+export function isQuestSetupSelect(customId) {
+  return customId.startsWith('quest_select_');
+}
+
+async function showAddUserSelect(interaction, customId, title) {
   const select = new UserSelectMenuBuilder()
     .setCustomId(customId)
-    .setPlaceholder(placeholder)
+    .setPlaceholder('Select users to add')
     .setMinValues(1)
     .setMaxValues(25);
 
   const row = new ActionRowBuilder().addComponents(select);
-  await interaction.reply({ content: `**${title}**\nSelect one or more users to add:`, components: [row], ephemeral: true });
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('quest_setup_back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(0x2ECC71)
+    .setDescription('Select one or more users to add.');
+
+  try {
+    await interaction.update({ embeds: [embed], components: [row, backRow] });
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to show user select:', err.message);
+  }
 }
 
-async function showRoleSelect(interaction, customId, title, placeholder) {
+async function showAddRoleSelect(interaction, customId, title) {
   const select = new RoleSelectMenuBuilder()
     .setCustomId(customId)
-    .setPlaceholder(placeholder)
+    .setPlaceholder('Select roles to add')
     .setMinValues(1)
     .setMaxValues(25);
 
   const row = new ActionRowBuilder().addComponents(select);
-  await interaction.reply({ content: `**${title}**\nSelect one or more roles to add:`, components: [row], ephemeral: true });
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('quest_setup_back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(0x2ECC71)
+    .setDescription('Select one or more roles to add.');
+
+  try {
+    await interaction.update({ embeds: [embed], components: [row, backRow] });
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to show role select:', err.message);
+  }
 }
 
-async function showRemoveUserSelect(interaction, guildId, field, customId, title, placeholder) {
-  const config = await getOrCreateConfig(guildId);
+async function showRemoveUserSelect(interaction, field, customId, title) {
+  let config;
+  try {
+    config = await getOrCreateConfig(interaction.guild.id);
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to fetch config:', err.message);
+    await interaction.reply({ content: '❌ Database error. Please run `/quest set` again.', ephemeral: true });
+    return;
+  }
+
   const current = config[field] || [];
 
   if (current.length === 0) {
@@ -221,18 +160,52 @@ async function showRemoveUserSelect(interaction, guildId, field, customId, title
     return;
   }
 
-  const select = new UserSelectMenuBuilder()
+  const options = [];
+  for (const userId of current) {
+    let label = userId;
+    try {
+      const user = await interaction.client.users.fetch(userId);
+      label = user.username;
+    } catch {
+      // use userId
+    }
+    options.push({ label: label.slice(0, 100), value: userId });
+  }
+
+  const select = new StringSelectMenuBuilder()
     .setCustomId(customId)
-    .setPlaceholder(placeholder)
+    .setPlaceholder('Select to remove')
     .setMinValues(1)
-    .setMaxValues(current.length);
+    .setMaxValues(Math.min(current.length, 25))
+    .addOptions(options);
 
   const row = new ActionRowBuilder().addComponents(select);
-  await interaction.reply({ content: `**${title}**\nCurrently selected: ${current.map((id) => `<@${id}>`).join(', ')}\nSelect users to remove:`, components: [row], ephemeral: true });
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('quest_setup_back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(0xE74C3C)
+    .setDescription('Select one or more to remove.');
+
+  try {
+    await interaction.update({ embeds: [embed], components: [row, backRow] });
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to show remove select:', err.message);
+  }
 }
 
-async function showRemoveRoleSelect(interaction, guildId, field, customId, title, placeholder) {
-  const config = await getOrCreateConfig(guildId);
+async function showRemoveRoleSelect(interaction, field, customId, title) {
+  let config;
+  try {
+    config = await getOrCreateConfig(interaction.guild.id);
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to fetch config:', err.message);
+    await interaction.reply({ content: '❌ Database error. Please run `/quest set` again.', ephemeral: true });
+    return;
+  }
+
   const current = config[field] || [];
 
   if (current.length === 0) {
@@ -240,18 +213,51 @@ async function showRemoveRoleSelect(interaction, guildId, field, customId, title
     return;
   }
 
-  const select = new RoleSelectMenuBuilder()
+  const options = [];
+  for (const roleId of current) {
+    let label = roleId;
+    try {
+      const role = await interaction.guild.roles.fetch(roleId);
+      if (role) label = role.name;
+    } catch {
+      // use roleId
+    }
+    options.push({ label: label.slice(0, 100), value: roleId });
+  }
+
+  const select = new StringSelectMenuBuilder()
     .setCustomId(customId)
-    .setPlaceholder(placeholder)
+    .setPlaceholder('Select to remove')
     .setMinValues(1)
-    .setMaxValues(current.length);
+    .setMaxValues(Math.min(current.length, 25))
+    .addOptions(options);
 
   const row = new ActionRowBuilder().addComponents(select);
-  await interaction.reply({ content: `**${title}**\nCurrently selected: ${current.map((id) => `<@&${id}>`).join(', ')}\nSelect roles to remove:`, components: [row], ephemeral: true });
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('quest_setup_back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary),
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(0xE74C3C)
+    .setDescription('Select one or more to remove.');
+
+  try {
+    await interaction.update({ embeds: [embed], components: [row, backRow] });
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to show remove select:', err.message);
+  }
 }
 
-async function showCoinModal(interaction, guildId, type) {
-  const config = await getOrCreateConfig(guildId);
+async function showCoinModal(interaction, type) {
+  let config;
+  try {
+    config = await getOrCreateConfig(interaction.guild.id);
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to fetch config for modal:', err.message);
+    await interaction.reply({ content: '❌ Database error. Please run `/quest set` again.', ephemeral: true });
+    return;
+  }
 
   const modalMap = {
     points_per_coin: {
@@ -278,6 +284,8 @@ async function showCoinModal(interaction, guildId, type) {
   };
 
   const m = modalMap[type];
+  if (!m) return;
+
   const modal = new ModalBuilder().setCustomId(m.modalId).setTitle(m.title);
   const input = new TextInputBuilder()
     .setCustomId(m.fieldId)
@@ -288,155 +296,211 @@ async function showCoinModal(interaction, guildId, type) {
     .setValue(m.value);
 
   modal.addComponents(new ActionRowBuilder().addComponents(input));
-  await interaction.showModal(modal);
+
+  try {
+    await interaction.showModal(modal);
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to show modal:', err.message);
+  }
+}
+
+export async function handleQuestSetupButton(interaction) {
+  const customId = interaction.customId;
+
+  try {
+    switch (customId) {
+      case 'quest_setup_done':
+        await interaction.update({ content: '✅ Quest setup complete. All settings have been saved.', embeds: [], components: [] });
+        return;
+      case 'quest_setup_cancel':
+        await interaction.update({ content: '❌ Quest setup cancelled.', embeds: [], components: [] });
+        return;
+      case 'quest_setup_back': {
+        const config = await getOrCreateConfig(interaction.guild.id);
+        const panel = buildMainPanel(config);
+        await interaction.update({ ...panel });
+        return;
+      }
+      case 'quest_setup_add_trainee_users':
+        await showAddUserSelect(interaction, 'quest_select_add_trainee_users', 'Add Trainee Users');
+        return;
+      case 'quest_setup_add_trainee_roles':
+        await showAddRoleSelect(interaction, 'quest_select_add_trainee_roles', 'Add Trainee Roles');
+        return;
+      case 'quest_setup_add_trainer_users':
+        await showAddUserSelect(interaction, 'quest_select_add_trainer_users', 'Add Trainer Users');
+        return;
+      case 'quest_setup_add_trainer_roles':
+        await showAddRoleSelect(interaction, 'quest_select_add_trainer_roles', 'Add Trainer Roles');
+        return;
+      case 'quest_setup_remove_trainee_users':
+        await showRemoveUserSelect(interaction, 'traineeUsers', 'quest_select_remove_trainee_users', 'Remove Trainee Users');
+        return;
+      case 'quest_setup_remove_trainee_roles':
+        await showRemoveRoleSelect(interaction, 'traineeRoles', 'quest_select_remove_trainee_roles', 'Remove Trainee Roles');
+        return;
+      case 'quest_setup_remove_trainer_users':
+        await showRemoveUserSelect(interaction, 'trainerUsers', 'quest_select_remove_trainer_users', 'Remove Trainer Users');
+        return;
+      case 'quest_setup_remove_trainer_roles':
+        await showRemoveRoleSelect(interaction, 'trainerRoles', 'quest_select_remove_trainer_roles', 'Remove Trainer Roles');
+        return;
+      case 'quest_setup_points_per_coin':
+        await showCoinModal(interaction, 'points_per_coin');
+        return;
+      case 'quest_setup_coins_promotion':
+        await showCoinModal(interaction, 'coins_promotion');
+        return;
+      case 'quest_setup_coins_demotion':
+        await showCoinModal(interaction, 'coins_demotion');
+        return;
+    }
+  } catch (err) {
+    console.error('[QUEST SETUP] Button error:', err.message);
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content: '❌ An error occurred. Please run `/quest set` again.', ephemeral: true });
+      } else {
+        await interaction.reply({ content: '❌ An error occurred. Please run `/quest set` again.', ephemeral: true });
+      }
+    } catch {
+      // interaction expired
+    }
+  }
 }
 
 export async function handleQuestSetupSelect(interaction) {
   const customId = interaction.customId;
-  const userId = interaction.user.id;
-  const channelId = interaction.channelId;
+  const guildId = interaction.guild.id;
+  const values = interaction.values;
 
-  const panel = getPanel(userId, channelId);
-  if (!panel) {
-    await interaction.reply({ content: '❌ This panel is no longer active.', ephemeral: true });
+  const operations = {
+    'quest_select_add_trainee_users': { field: 'traineeUsers', op: 'add' },
+    'quest_select_add_trainee_roles': { field: 'traineeRoles', op: 'add' },
+    'quest_select_add_trainer_users': { field: 'trainerUsers', op: 'add' },
+    'quest_select_add_trainer_roles': { field: 'trainerRoles', op: 'add' },
+    'quest_select_remove_trainee_users': { field: 'traineeUsers', op: 'remove' },
+    'quest_select_remove_trainee_roles': { field: 'traineeRoles', op: 'remove' },
+    'quest_select_remove_trainer_users': { field: 'trainerUsers', op: 'remove' },
+    'quest_select_remove_trainer_roles': { field: 'trainerRoles', op: 'remove' },
+  };
+
+  const operation = operations[customId];
+  if (!operation) return;
+
+  try {
+    if (operation.op === 'add') {
+      await QuestConfig.findOneAndUpdate(
+        { guildId },
+        { $addToSet: { [operation.field]: { $each: values } } },
+        { upsert: true, setDefaultsOnInsert: true },
+      );
+    } else {
+      await QuestConfig.findOneAndUpdate(
+        { guildId },
+        { $pull: { [operation.field]: { $in: values } } },
+        { upsert: true, setDefaultsOnInsert: true },
+      );
+    }
+  } catch (err) {
+    console.error('[QUEST SETUP] Database error:', err.message);
+    try {
+      await interaction.update({ content: '❌ Database error. Please run `/quest set` again.', embeds: [], components: [] });
+    } catch {
+      // interaction expired
+    }
     return;
   }
 
-  const addField = async (field, values) => {
-    await interaction.deferUpdate();
+  let config;
+  try {
+    config = await getOrCreateConfig(guildId);
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to fetch config for refresh:', err.message);
     try {
-      await QuestConfig.findOneAndUpdate(
-        { guildId: panel.guildId },
-        { $addToSet: { [field]: { $each: values } } },
-        { upsert: true, setDefaultsOnInsert: true },
-      );
+      await interaction.update({ content: '❌ Failed to reload settings. Please run `/quest set` again.', embeds: [], components: [] });
     } catch {
-      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
-      return;
+      // interaction expired
     }
-    await refreshPanel(interaction, panel.guildId);
-  };
+    return;
+  }
 
-  const removeField = async (field, values) => {
-    await interaction.deferUpdate();
-    try {
-      await QuestConfig.findOneAndUpdate(
-        { guildId: panel.guildId },
-        { $pull: { [field]: { $in: values } } },
-        { upsert: true, setDefaultsOnInsert: true },
-      );
-    } catch {
-      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
-      return;
-    }
-    await refreshPanel(interaction, panel.guildId);
-  };
-
-  switch (customId) {
-    case 'quest_select_trainee_users':
-      await addField('traineeUsers', interaction.values);
-      break;
-    case 'quest_select_trainee_roles':
-      await addField('traineeRoles', interaction.values);
-      break;
-    case 'quest_select_trainer_users':
-      await addField('trainerUsers', interaction.values);
-      break;
-    case 'quest_select_trainer_roles':
-      await addField('trainerRoles', interaction.values);
-      break;
-    case 'quest_remove_trainee_users':
-      await removeField('traineeUsers', interaction.values);
-      break;
-    case 'quest_remove_trainee_roles':
-      await removeField('traineeRoles', interaction.values);
-      break;
-    case 'quest_remove_trainer_users':
-      await removeField('trainerUsers', interaction.values);
-      break;
-    case 'quest_remove_trainer_roles':
-      await removeField('trainerRoles', interaction.values);
-      break;
+  const panel = buildMainPanel(config);
+  try {
+    await interaction.update({ ...panel });
+  } catch (err) {
+    console.error('[QUEST SETUP] Failed to update panel:', err.message);
   }
 }
 
 export async function handleQuestSetupModal(interaction) {
   const customId = interaction.customId;
-  const userId = interaction.user.id;
-  const channelId = interaction.channelId;
+  const guildId = interaction.guild.id;
 
-  const panel = getPanel(userId, channelId);
-  if (!panel) {
-    await interaction.reply({ content: '❌ This panel is no longer active.', ephemeral: true });
-    return;
-  }
-
-  if (customId === 'quest_modal_points_per_coin') {
-    const raw = interaction.fields.getTextInputValue('quest_points_per_coin_value').trim();
-    const value = parseInt(raw, 10);
-    if (Number.isNaN(value) || value < 1) {
-      await interaction.reply({ content: '❌ Points per coin must be a whole number of 1 or higher.', ephemeral: true });
-      return;
-    }
-    await interaction.deferUpdate();
-    try {
+  try {
+    if (customId === 'quest_modal_points_per_coin') {
+      const raw = interaction.fields.getTextInputValue('quest_points_per_coin_value').trim();
+      const value = parseInt(raw, 10);
+      if (Number.isNaN(value) || value < 1) {
+        await interaction.reply({ content: '❌ Points per coin must be a whole number of 1 or higher.', ephemeral: true });
+        return;
+      }
       await QuestConfig.findOneAndUpdate(
-        { guildId: panel.guildId },
+        { guildId },
         { pointsPerCoin: value },
         { upsert: true, setDefaultsOnInsert: true },
       );
-    } catch {
-      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
+      const config = await getOrCreateConfig(guildId);
+      const panel = buildMainPanel(config);
+      await interaction.update({ ...panel });
       return;
     }
-    await refreshPanel(interaction, panel.guildId);
-    await interaction.followUp({ content: `✅ Points Required Per Promote Coin set to ${value}.`, ephemeral: true });
-    return;
-  }
 
-  if (customId === 'quest_modal_coins_promotion') {
-    const raw = interaction.fields.getTextInputValue('quest_coins_promotion_value').trim();
-    const value = parseInt(raw, 10);
-    if (Number.isNaN(value)) {
-      await interaction.reply({ content: '❌ Promotion coins must be a whole number.', ephemeral: true });
-      return;
-    }
-    await interaction.deferUpdate();
-    try {
+    if (customId === 'quest_modal_coins_promotion') {
+      const raw = interaction.fields.getTextInputValue('quest_coins_promotion_value').trim();
+      const value = parseInt(raw, 10);
+      if (Number.isNaN(value)) {
+        await interaction.reply({ content: '❌ Promotion coins must be a whole number.', ephemeral: true });
+        return;
+      }
       await QuestConfig.findOneAndUpdate(
-        { guildId: panel.guildId },
+        { guildId },
         { coinsForPromotion: value },
         { upsert: true, setDefaultsOnInsert: true },
       );
-    } catch {
-      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
+      const config = await getOrCreateConfig(guildId);
+      const panel = buildMainPanel(config);
+      await interaction.update({ ...panel });
       return;
     }
-    await refreshPanel(interaction, panel.guildId);
-    await interaction.followUp({ content: `✅ Promote Coins Required for Promotion set to ${value}.`, ephemeral: true });
-    return;
-  }
 
-  if (customId === 'quest_modal_coins_demotion') {
-    const raw = interaction.fields.getTextInputValue('quest_coins_demotion_value').trim();
-    const value = parseInt(raw, 10);
-    if (Number.isNaN(value)) {
-      await interaction.reply({ content: '❌ Demotion coins must be a whole number.', ephemeral: true });
-      return;
-    }
-    await interaction.deferUpdate();
-    try {
+    if (customId === 'quest_modal_coins_demotion') {
+      const raw = interaction.fields.getTextInputValue('quest_coins_demotion_value').trim();
+      const value = parseInt(raw, 10);
+      if (Number.isNaN(value)) {
+        await interaction.reply({ content: '❌ Demotion coins must be a whole number.', ephemeral: true });
+        return;
+      }
       await QuestConfig.findOneAndUpdate(
-        { guildId: panel.guildId },
+        { guildId },
         { coinsForDemotion: value },
         { upsert: true, setDefaultsOnInsert: true },
       );
-    } catch {
-      await interaction.editReply({ content: '❌ Database error.', embeds: [], components: [] });
+      const config = await getOrCreateConfig(guildId);
+      const panel = buildMainPanel(config);
+      await interaction.update({ ...panel });
       return;
     }
-    await refreshPanel(interaction, panel.guildId);
-    await interaction.followUp({ content: `✅ Promote Coins Required for Demotion set to ${value}.`, ephemeral: true });
-    return;
+  } catch (err) {
+    console.error('[QUEST SETUP] Modal error:', err.message);
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content: '❌ An error occurred. Please run `/quest set` again.', ephemeral: true });
+      } else {
+        await interaction.reply({ content: '❌ An error occurred. Please run `/quest set` again.', ephemeral: true });
+      }
+    } catch {
+      // interaction expired
+    }
   }
 }
