@@ -23,7 +23,6 @@ import { data as questData, execute as questExecute } from './commands/quest.js'
 import { data as questionData, execute as questionExecute } from './commands/question.js';
 import { data as addData, execute as addExecute } from './commands/add.js';
 import { data as takeData, execute as takeExecute } from './commands/take.js';
-import { data as staffData, execute as staffExecute } from './commands/staff.js';
 import {
   handleFollowerButton,
   handleFollowerModal,
@@ -54,6 +53,16 @@ import { connectDatabase, disconnectDatabase, isDatabaseConnected } from './db/d
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 import { ActiveQuestion } from './db/models/ActiveQuestion.js';
 import { buildQuestionEmbed, buildQuestionButtons } from './components/question-panel.js';
+import { QuestConfig } from './db/models/QuestConfig.js';
+import {
+  getQuestConfig,
+  isMessageTracked,
+  incrementDailyMessageCount,
+  evaluateDailyMessages,
+  getUtc8Date,
+  getNextUtc8ResetTime,
+} from './utils/questHelpers.js';
+import { updateAllLeaderboards, updateLeaderboard } from './utils/leaderboardManager.js';
 
 const client = new Client({
   intents: [
@@ -88,7 +97,6 @@ const slashCommands = [
   questionData,
   addData,
   takeData,
-  staffData,
 ];
 
 const commandMap = new Map();
@@ -114,7 +122,6 @@ for (const cmd of slashCommands) {
     question: questionExecute,
     add: addExecute,
     take: takeExecute,
-    staff: staffExecute,
   }[cmd.name]);
 }
 
@@ -122,12 +129,14 @@ const autocompleteMap = new Map();
 autocompleteMap.set('delete-button', deleteButtonAutocomplete);
 autocompleteMap.set('close', closeAutocomplete);
 
+let dailyQuestTimer = null;
+
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`✅ Bot online as ${readyClient.user.tag}`);
+  console.log(`\u2705 Bot online as ${readyClient.user.tag}`);
 
   try {
     await readyClient.application.commands.set(slashCommands);
-    console.log('✅ Slash commands registered globally.');
+    console.log('\u2705 Slash commands registered globally.');
   } catch (err) {
     console.error('[COMMAND REGISTER ERROR]', err.message);
   }
@@ -138,6 +147,9 @@ client.once(Events.ClientReady, async (readyClient) => {
   startTrackerChecker(readyClient);
 
   await restoreActiveQuestions(readyClient);
+  await runDailyQuestEvaluation(readyClient);
+  scheduleDailyQuestEvaluation(readyClient);
+  await updateAllLeaderboards(readyClient);
 });
 
 async function restoreActiveQuestions(readyClient) {
@@ -182,10 +194,65 @@ async function restoreActiveQuestions(readyClient) {
   console.log('[RESTORE] Active question restoration complete.');
 }
 
+async function runDailyQuestEvaluation(readyClient) {
+  if (!isDatabaseConnected()) return;
+
+  const today = getUtc8Date();
+
+  let configs;
+  try {
+    configs = await QuestConfig.find({ lastDailyEvalDate: { $ne: today } }).lean();
+  } catch (err) {
+    console.error('[DAILY QUEST] Failed to fetch configs:', err.message);
+    return;
+  }
+
+  for (const cfg of configs) {
+    try {
+      await evaluateDailyMessages(readyClient, cfg.guildId, cfg);
+      await QuestConfig.updateOne({ guildId: cfg.guildId }, { lastDailyEvalDate: today });
+      await updateLeaderboard(readyClient, cfg.guildId);
+      console.log(`[DAILY QUEST] Evaluated daily messages for guild ${cfg.guildId}.`);
+    } catch (err) {
+      console.error(`[DAILY QUEST] Failed to evaluate guild ${cfg.guildId}:`, err.message);
+    }
+  }
+}
+
+function scheduleDailyQuestEvaluation(readyClient) {
+  const nextReset = getNextUtc8ResetTime();
+  const delay = nextReset.getTime() - Date.now();
+
+  if (delay < 0) {
+    setTimeout(() => scheduleDailyQuestEvaluation(readyClient), 1000);
+    return;
+  }
+
+  console.log(`[DAILY QUEST] Next evaluation at ${nextReset.toISOString()} (in ${Math.round(delay / 1000)}s)`);
+
+  dailyQuestTimer = setTimeout(async () => {
+    await runDailyQuestEvaluation(readyClient);
+    scheduleDailyQuestEvaluation(readyClient);
+  }, delay);
+}
+
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot) return;
     if (!message.guild) return;
+
+    // Quest message tracking — strict user + channel check
+    if (isDatabaseConnected()) {
+      try {
+        const cfg = await getQuestConfig(message.guild.id);
+        if (cfg && isMessageTracked(message, cfg)) {
+          await incrementDailyMessageCount(message.guild.id, message.author.id, message.author.username);
+          await updateLeaderboard(client, message.guild.id);
+        }
+      } catch (err) {
+        console.error('[MESSAGE TRACKING] Error:', err.message);
+      }
+    }
 
     if (message.content.startsWith('R!')) {
       const lower = message.content.slice(2).trim().toLowerCase();
@@ -302,9 +369,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.isRepliable()) {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: '❌ Something went wrong.', ephemeral: true });
+          await interaction.followUp({ content: '\u274C Something went wrong.', ephemeral: true });
         } else {
-          await interaction.reply({ content: '❌ Something went wrong.', ephemeral: true });
+          await interaction.reply({ content: '\u274C Something went wrong.', ephemeral: true });
         }
       }
     } catch {
@@ -315,19 +382,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 process.on('SIGINT', async () => {
   stopTrackerChecker();
+  if (dailyQuestTimer) clearTimeout(dailyQuestTimer);
   await disconnectDatabase();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   stopTrackerChecker();
+  if (dailyQuestTimer) clearTimeout(dailyQuestTimer);
   await disconnectDatabase();
   process.exit(0);
 });
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('❌ DISCORD_TOKEN is not set in the environment. Add it to your .env file.');
+  console.error('\u274C DISCORD_TOKEN is not set in the environment. Add it to your .env file.');
   process.exit(1);
 }
 
