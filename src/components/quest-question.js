@@ -6,8 +6,8 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  PermissionFlagsBits,
 } from 'discord.js';
-import { PermissionFlagsBits } from 'discord.js';
 import { QuestQuestion } from '../db/models/QuestQuestion.js';
 import { QuestAnswer } from '../db/models/QuestAnswer.js';
 import { QuestConfig } from '../db/models/QuestConfig.js';
@@ -69,6 +69,59 @@ export async function resolveEligibleTrainees(guild, config) {
   }
 
   return Array.from(traineeSet);
+}
+
+function buildQuestionEmbed(questionText, totalTrainees, answeredCount) {
+  return new EmbedBuilder()
+    .setTitle('Quest Question')
+    .setColor(0x2ECC71)
+    .setDescription(`**${questionText}**`)
+    .addFields(
+      { name: 'Trainees', value: String(totalTrainees), inline: true },
+      { name: 'Answers', value: `${answeredCount}/${totalTrainees}`, inline: true },
+    )
+    .setFooter({ text: 'Click the Answer button to submit your response.' });
+}
+
+async function updateQuestionMessage(client, question) {
+  if (!question.channelId || !question.messageId) return;
+
+  let channel;
+  try {
+    channel = await client.channels.fetch(question.channelId);
+  } catch {
+    return;
+  }
+
+  if (!channel) return;
+
+  let message;
+  try {
+    message = await channel.messages.fetch(question.messageId);
+  } catch {
+    return;
+  }
+
+  if (!message) return;
+
+  const embed = buildQuestionEmbed(
+    question.questionText,
+    question.eligibleTrainees.length,
+    question.answeredTrainees.length,
+  );
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`quest_answer:${question._id}`)
+      .setLabel('Answer')
+      .setStyle(ButtonStyle.Primary),
+  );
+
+  try {
+    await message.edit({ embeds: [embed], components: [row] });
+  } catch {
+    // message may be gone
+  }
 }
 
 export async function startQuestion(interaction, config, questionText) {
@@ -136,18 +189,6 @@ export async function startQuestion(interaction, config, questionText) {
   await interaction.reply({ content: '✅ Question started.', ephemeral: true });
 }
 
-function buildQuestionEmbed(questionText, totalTrainees, answeredCount) {
-  return new EmbedBuilder()
-    .setTitle('Quest Question')
-    .setColor(0x2ECC71)
-    .setDescription(`**${questionText}**`)
-    .addFields(
-      { name: 'Trainees', value: String(totalTrainees), inline: true },
-      { name: 'Answers', value: `${answeredCount}/${totalTrainees}`, inline: true },
-    )
-    .setFooter({ text: 'Click the Answer button to submit your response.' });
-}
-
 async function recalcEligibleTrainees(client, guildId, questionId) {
   let question;
   try {
@@ -162,7 +203,7 @@ async function recalcEligibleTrainees(client, guildId, questionId) {
   try {
     config = await QuestConfig.findOne({ guildId }).lean();
   } catch {
-    return null;
+    return question;
   }
 
   if (!config) return question;
@@ -305,14 +346,20 @@ export async function handleAnswerModal(interaction) {
   }
 
   try {
-    await QuestQuestion.findByIdAndUpdate(questionId, {
-      $addToSet: { answeredTrainees: interaction.user.id },
-    });
+    question = await QuestQuestion.findByIdAndUpdate(
+      questionId,
+      { $addToSet: { answeredTrainees: interaction.user.id } },
+      { new: true },
+    ).lean();
   } catch (err) {
     console.error('[QUEST] Failed to update answeredTrainees:', err.message);
   }
 
   await interaction.reply({ content: '✅ Your answer has been submitted.', ephemeral: true });
+
+  if (question) {
+    await updateQuestionMessage(interaction.client, question);
+  }
 
   await checkAllAnswered(interaction.client, interaction.guild.id, questionId);
 }
@@ -335,6 +382,66 @@ async function checkAllAnswered(client, guildId, questionId) {
   if (question.answeredTrainees.length >= question.eligibleTrainees.length) {
     await endQuestion(client, guildId, questionId, 'auto', null);
   }
+}
+
+async function resolveUsername(userId, client) {
+  try {
+    const user = await client.users.fetch(userId);
+    return user.username;
+  } catch {
+    return `<@${userId}>`;
+  }
+}
+
+async function buildResultsEmbed(question, answers, reason, endedBy, client) {
+  const answerMap = new Map();
+  for (const a of answers) {
+    answerMap.set(a.traineeId, a.answerText);
+  }
+
+  const isAuto = reason === 'auto';
+  const title = isAuto ? 'Question — All Answers Submitted' : 'Question Ended';
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(isAuto ? 0x2ECC71 : 0xE67E22)
+    .addFields({ name: 'Question', value: question.questionText.slice(0, 1024), inline: false });
+
+  const answeredLines = [];
+  for (const traineeId of question.answeredTrainees) {
+    const answer = answerMap.get(traineeId);
+    const username = await resolveUsername(traineeId, client);
+    answeredLines.push(`**${username}**\n${(answer || '(no answer)').slice(0, 1024)}`);
+  }
+
+  if (answeredLines.length > 0) {
+    const fieldText = answeredLines.join('\n\n');
+    embed.addFields({ name: 'Answers', value: fieldText.slice(0, 1024), inline: false });
+  } else {
+    embed.addFields({ name: 'Answers', value: 'No answers were submitted.', inline: false });
+  }
+
+  const noAnswerTrainees = question.eligibleTrainees.filter(
+    (id) => !question.answeredTrainees.includes(id),
+  );
+
+  if (noAnswerTrainees.length > 0) {
+    const noAnswerLines = [];
+    for (const id of noAnswerTrainees) {
+      const username = await resolveUsername(id, client);
+      noAnswerLines.push(username);
+    }
+    embed.addFields({ name: 'Did Not Answer', value: noAnswerLines.join('\n').slice(0, 1024), inline: false });
+  }
+
+  if (!isAuto && endedBy) {
+    const enderUsername = await resolveUsername(endedBy, client);
+    embed.addFields({ name: 'Status', value: `Manually ended by ${enderUsername}`, inline: false });
+  } else if (isAuto) {
+    embed.addFields({ name: 'Status', value: 'All trainees answered — automatically completed.', inline: false });
+  }
+
+  return embed;
 }
 
 export async function endQuestion(client, guildId, questionId, reason, endedBy) {
@@ -371,7 +478,7 @@ export async function endQuestion(client, guildId, questionId, reason, endedBy) 
     answers = [];
   }
 
-  const embed = buildResultsEmbed(question, answers, reason, endedBy, client);
+  const embed = await buildResultsEmbed(question, answers, reason, endedBy, client);
 
   let channel = null;
   try {
@@ -404,69 +511,6 @@ export async function endQuestion(client, guildId, questionId, reason, endedBy) 
   return true;
 }
 
-function resolveUsername(userId, client) {
-  let user = null;
-  try {
-    user = client.users.cache.get(userId);
-  } catch {
-    // ignore
-  }
-  if (!user) {
-    return `<@${userId}>`;
-  }
-  return `@${user.username}`;
-}
-
-function buildResultsEmbed(question, answers, reason, endedBy, client) {
-  const answerMap = new Map();
-  for (const a of answers) {
-    answerMap.set(a.traineeId, a.answerText);
-  }
-
-  const isAuto = reason === 'auto';
-  const title = isAuto ? 'Question — All Answers Submitted' : 'Question Ended';
-
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setColor(isAuto ? 0x2ECC71 : 0xE67E22)
-    .addFields({ name: 'Question', value: question.questionText.slice(0, 1024), inline: false });
-
-  const answeredLines = [];
-  for (const traineeId of question.answeredTrainees) {
-    const answer = answerMap.get(traineeId);
-    const username = resolveUsername(traineeId, client);
-    answeredLines.push(`**${username}**\n${(answer || '(no answer)').slice(0, 1024)}`);
-  }
-
-  if (answeredLines.length > 0) {
-    const fieldText = answeredLines.join('\n\n');
-    embed.addFields({ name: 'Answers', value: fieldText.slice(0, 1024), inline: false });
-  } else {
-    embed.addFields({ name: 'Answers', value: 'No answers were submitted.', inline: false });
-  }
-
-  const noAnswerTrainees = question.eligibleTrainees.filter(
-    (id) => !question.answeredTrainees.includes(id),
-  );
-
-  if (noAnswerTrainees.length > 0) {
-    const noAnswerLines = noAnswerTrainees.map((id) => {
-      const username = resolveUsername(id, client);
-      return `${username}`;
-    });
-    embed.addFields({ name: 'Did Not Answer', value: noAnswerLines.join('\n').slice(0, 1024), inline: false });
-  }
-
-  if (!isAuto && endedBy) {
-    const enderUsername = resolveUsername(endedBy, client);
-    embed.addFields({ name: 'Status', value: `Manually ended by ${enderUsername}`, inline: false });
-  } else if (isAuto) {
-    embed.addFields({ name: 'Status', value: 'All trainees answered — automatically completed.', inline: false });
-  }
-
-  return embed;
-}
-
 export async function restoreActiveQuestion(client, guildId) {
   let question;
   try {
@@ -493,18 +537,7 @@ export async function restoreActiveQuestion(client, guildId) {
     if (question.messageId) {
       const msg = await channel.messages.fetch(question.messageId).catch(() => null);
       if (msg) {
-        const embed = buildQuestionEmbed(
-          question.questionText,
-          question.eligibleTrainees.length,
-          question.answeredTrainees.length,
-        );
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`quest_answer:${question._id}`)
-            .setLabel('Answer')
-            .setStyle(ButtonStyle.Primary),
-        );
-        await msg.edit({ embeds: [embed], components: [row] });
+        await updateQuestionMessage(client, question);
       }
     }
   } catch (err) {
