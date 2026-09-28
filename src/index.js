@@ -18,11 +18,6 @@ import { data as vouchData, execute as vouchExecute } from './commands/vouch.js'
 import { data as dmData, execute as dmExecute } from './commands/dm.js';
 import { data as closeData, execute as closeExecute, autocomplete as closeAutocomplete } from './commands/close-button.js';
 import { handleTicketClosePrefix } from './commands/ticket-prefix.js';
-import { data as questData, execute as questExecute } from './commands/quest.js';
-import { data as questionData, execute as questionExecute } from './commands/question.js';
-import { data as addData, execute as addExecute } from './commands/add.js';
-import { data as takeData, execute as takeExecute } from './commands/take.js';
-import { data as staffData, execute as staffExecute } from './commands/staff.js';
 import { handleBotProfilePrefix } from './commands/bot-profile-prefix.js';
 import {
   handleFollowerButton,
@@ -36,21 +31,6 @@ import { handleControlButton, handleControlModal, isControlButton, isControlModa
 import { handleQueueButton, isQueueButton } from './components/queue-panel.js';
 import { handleTicketSelect, handleTicketModal, isTicketSelect, isTicketModal } from './components/ticket-panel.js';
 import { handleVouchButton, handleVouchModal, isVouchButton, isVouchModal } from './components/vouch-panel.js';
-import {
-  isQuestAnswerButton,
-  isQuestAnswerModal,
-  handleAnswerButton,
-  handleAnswerModal,
-  restoreActiveQuestion,
-} from './components/quest-question.js';
-import {
-  isQuestSetupButton,
-  isQuestSetupModal,
-  isQuestSetupSelect,
-  handleQuestSetupButton,
-  handleQuestSetupModal,
-  handleQuestSetupSelect,
-} from './components/quest-setup.js';
 import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { startTrackerChecker, stopTrackerChecker } from './utils/trackerChecker.js';
 
@@ -83,11 +63,6 @@ const slashCommands = [
   vouchData,
   dmData,
   closeData,
-  questData,
-  questionData,
-  addData,
-  takeData,
-  staffData,
 ];
 
 const commandMap = new Map();
@@ -109,11 +84,6 @@ for (const cmd of slashCommands) {
     vouch: vouchExecute,
     dm: dmExecute,
     'close': closeExecute,
-    'quest': questExecute,
-    'question': questionExecute,
-    'add': addExecute,
-    'take': takeExecute,
-    'staff': staffExecute,
   }[cmd.name]);
 }
 
@@ -136,9 +106,6 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   startTrackerChecker(readyClient);
 
-  for (const guild of readyClient.guilds.cache.values()) {
-    await restoreActiveQuestion(readyClient, guild.id);
-  }
 });
 
 client.on(Events.MessageCreate, async (message) => {
@@ -205,14 +172,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleVouchButton(interaction);
         return;
       }
-      if (isQuestAnswerButton(interaction.customId)) {
-        await handleAnswerButton(interaction);
-        return;
-      }
-      if (isQuestSetupButton(interaction.customId)) {
-        await handleQuestSetupButton(interaction);
-        return;
-      }
     }
 
     if (interaction.isModalSubmit()) {
@@ -232,14 +191,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleVouchModal(interaction);
         return;
       }
-      if (isQuestSetupModal(interaction.customId)) {
-        await handleQuestSetupModal(interaction);
-        return;
-      }
-      if (isQuestAnswerModal(interaction.customId)) {
-        await handleAnswerModal(interaction);
-        return;
-      }
     }
 
     if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu() || interaction.isRoleSelectMenu() || interaction.isUserSelectMenu()) {
@@ -249,10 +200,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       if (isTicketSelect(interaction.customId)) {
         await handleTicketSelect(interaction);
-        return;
-      }
-      if (isQuestSetupSelect(interaction.customId)) {
-        await handleQuestSetupSelect(interaction);
         return;
       }
     }
