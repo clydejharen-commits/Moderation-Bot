@@ -12,8 +12,6 @@ const questConfigSchema = new Schema(
     pointsPerCoin: { type: Number, default: 5, min: 1 },
     coinsForPromotion: { type: Number, default: 15 },
     coinsForDemotion: { type: Number, default: -5 },
-    leaderboardChannelId: { type: String, default: null },
-    leaderboardMessageId: { type: String, default: null },
   },
   { timestamps: true },
 );

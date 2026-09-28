@@ -3,7 +3,6 @@ import { isDatabaseConnected } from '../db/database.js';
 import { QuestConfig } from '../db/models/QuestConfig.js';
 import { StaffPoints } from '../db/models/StaffPoints.js';
 import { isTrainerOrAdmin } from '../components/quest-question.js';
-import { updateLeaderboardMessage } from '../utils/leaderboardHelpers.js';
 
 export const data = new SlashCommandBuilder()
   .setName('take')
@@ -82,8 +81,6 @@ export async function execute(interaction) {
       // non-fatal
     }
   }
-
-  await updateLeaderboardMessage(interaction.client, interaction.guild.id);
 
   await interaction.reply({ content: `✅ Took **${points}** point(s) from <@${user.id}>.`, ephemeral: true });
 }
