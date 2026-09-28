@@ -1,11 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { isDatabaseConnected } from '../db/database.js';
 import { QuestConfig } from '../db/models/QuestConfig.js';
-import { QuestQuestion } from '../db/models/QuestQuestion.js';
-import {
-  registerQuestSetup,
-  buildMainPanelForCommand,
-} from '../components/quest-setup.js';
+import { buildMainPanel } from '../components/quest-setup.js';
 import {
   isTrainerOrAdmin,
   getActiveQuestion,
@@ -68,9 +64,7 @@ async function handleSet(interaction) {
     }
   }
 
-  registerQuestSetup(interaction.user.id, interaction.channelId, interaction.guild.id);
-
-  const panelData = buildMainPanelForCommand(config);
+  const panelData = buildMainPanel(config);
   await interaction.reply({ ...panelData, ephemeral: true });
 }
 
