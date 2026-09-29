@@ -28,6 +28,7 @@ const BTN = {
   tokenSettings:      `${PREFIX}:btn:ts`,
   dailyMessages:      `${PREFIX}:btn:dm`,
   leaderboard:       `${PREFIX}:btn:lb`,
+  leaderboardAppearance: `${PREFIX}:btn:lba`,
   close:              `${PREFIX}:btn:close`,
   back:               `${PREFIX}:btn:back`,
 };
@@ -51,19 +52,19 @@ const SEL = {
 const MODAL = {
   tokenSettings:   `${PREFIX}:modal:ts`,
   dailyMessages:   `${PREFIX}:modal:dm`,
+  leaderboardAppearance: `${PREFIX}:modal:lba`,
 };
 
 const MODAL_FIELD = {
   pointsPerToken:    `${PREFIX}:mf:ppt`,
-  demotionMin:       `${PREFIX}:mf:dmin`,
-  demotionMax:       `${PREFIX}:mf:dmax`,
-  normalMin:         `${PREFIX}:mf:nmin`,
-  normalMax:         `${PREFIX}:mf:nmax`,
-  promotionMin:      `${PREFIX}:mf:pmin`,
-  promotionMax:      `${PREFIX}:mf:pmax`,
+  demotionRange:     `${PREFIX}:mf:drange`,
+  normalRange:       `${PREFIX}:mf:nrange`,
+  promotionRange:    `${PREFIX}:mf:prange`,
   requiredMessages:  `${PREFIX}:mf:rm`,
   pointsIfMet:       `${PREFIX}:mf:pim`,
   pointsIfNotMet:    `${PREFIX}:mf:pinm`,
+  leaderboardColor:  `${PREFIX}:mf:lbcolor`,
+  leaderboardImageUrl: `${PREFIX}:mf:lbimg`,
 };
 
 async function safeReply(interaction, content) {
@@ -175,10 +176,18 @@ function buildDailyMessagesSummary(cfg) {
 }
 
 function buildLeaderboardSummary(cfg) {
+  const parts = [];
   if (cfg.leaderboardChannelId) {
-    return `**Channel:** <#${cfg.leaderboardChannelId}>\n**Message ID:** ${cfg.leaderboardMessageId || 'Not created yet'}`;
+    parts.push(`**Channel:** <#${cfg.leaderboardChannelId}>`);
+    parts.push(`**Message ID:** ${cfg.leaderboardMessageId || 'Not created yet'}`);
+  } else {
+    parts.push('**Channel:** Not set');
+    parts.push('Use the Leaderboard button to select a channel.');
   }
-  return '**Channel:** Not set\nUse the Leaderboard button to select a channel.';
+  const colorHex = (cfg.leaderboardColor ?? 0x2B6CB0).toString(16).padStart(6, '0');
+  parts.push(`**Embed Color:** #${colorHex}`);
+  parts.push(`**Image:** ${cfg.leaderboardImageUrl ? 'Set' : 'None'}`);
+  return parts.join('\n');
 }
 
 export function buildMainButtons() {
@@ -392,9 +401,10 @@ function buildMessageTrackingComponents(cfg) {
 }
 
 function buildLeaderboardEmbed(cfg) {
+  const color = cfg?.leaderboardColor ?? 0x2B6CB0;
   return new EmbedBuilder()
     .setTitle('\u{1F3C6} Leaderboard Configuration')
-    .setColor(0x2B6CB0)
+    .setColor(color)
     .setDescription(buildLeaderboardSummary(cfg))
     .setFooter({ text: 'Quest System \u2014 Leaderboard' })
     .setTimestamp();
@@ -411,6 +421,7 @@ function buildLeaderboardComponents() {
         .setMaxValues(1),
     ),
     new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(BTN.leaderboardAppearance).setLabel('Appearance').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(BTN.back).setLabel('\u2190 Back').setStyle(ButtonStyle.Secondary),
     ),
   ];
@@ -425,7 +436,9 @@ export function isQuestSelect(customId) {
 }
 
 export function isQuestModal(customId) {
-  return customId === MODAL.tokenSettings || customId === MODAL.dailyMessages;
+  return customId === MODAL.tokenSettings
+    || customId === MODAL.dailyMessages
+    || customId === MODAL.leaderboardAppearance;
 }
 
 function hasAdmin(interaction) {
@@ -517,59 +530,30 @@ export async function handleQuestButton(interaction) {
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
-          .setCustomId(MODAL_FIELD.demotionMin)
-          .setLabel('Demotion Min Token')
+          .setCustomId(MODAL_FIELD.demotionRange)
+          .setLabel('Demotion Range (min - max)')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(10)
-          .setValue(String(cfg.demotionMin)),
+          .setMaxLength(30)
+          .setValue(`${cfg.demotionMin} - ${cfg.demotionMax}`),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
-          .setCustomId(MODAL_FIELD.demotionMax)
-          .setLabel('Demotion Max Token')
+          .setCustomId(MODAL_FIELD.normalRange)
+          .setLabel('Normal Range (min - max)')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(10)
-          .setValue(String(cfg.demotionMax)),
+          .setMaxLength(30)
+          .setValue(`${cfg.normalMin} - ${cfg.normalMax}`),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
-          .setCustomId(MODAL_FIELD.normalMin)
-          .setLabel('Normal Min Token')
+          .setCustomId(MODAL_FIELD.promotionRange)
+          .setLabel('Promotion Range (min - max)')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(10)
-          .setValue(String(cfg.normalMin)),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId(MODAL_FIELD.normalMax)
-          .setLabel('Normal Max Token')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(10)
-          .setValue(String(cfg.normalMax)),
-      ),
-    );
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId(MODAL_FIELD.promotionMin)
-          .setLabel('Promotion Min Token')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(10)
-          .setValue(String(cfg.promotionMin)),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId(MODAL_FIELD.promotionMax)
-          .setLabel('Promotion Max Token')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(10)
-          .setValue(String(cfg.promotionMax)),
+          .setMaxLength(30)
+          .setValue(`${cfg.promotionMin} - ${cfg.promotionMax}`),
       ),
     );
     try {
@@ -630,6 +614,41 @@ export async function handleQuestButton(interaction) {
       embeds: [buildLeaderboardEmbed(cfg)],
       components: buildLeaderboardComponents(),
     });
+    return;
+  }
+  if (customId === BTN.leaderboardAppearance) {
+    const cfg = await getQuestConfig(guildId);
+    if (!cfg) { await safeReply(interaction, '\u274C Database error.'); return; }
+    const currentColor = (cfg.leaderboardColor ?? 0x2B6CB0).toString(16).padStart(6, '0');
+    const modal = new ModalBuilder()
+      .setCustomId(MODAL.leaderboardAppearance)
+      .setTitle('Leaderboard Appearance');
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId(MODAL_FIELD.leaderboardColor)
+          .setLabel('Embed Color (hex, e.g. 2B6CB0)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(7)
+          .setValue(currentColor),
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId(MODAL_FIELD.leaderboardImageUrl)
+          .setLabel('Image URL (leave blank for none)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(500)
+          .setValue(cfg.leaderboardImageUrl || ''),
+      ),
+    );
+    try {
+      await interaction.showModal(modal);
+    } catch (err) {
+      console.error('[QUEST PANEL] Failed to show leaderboard appearance modal:', err);
+      await safeReply(interaction, '\u274C Failed to open the settings form. Please try again.');
+    }
     return;
   }
   await safeReply(interaction, '\u274C Unknown action.');
@@ -839,15 +858,23 @@ export async function handleQuestModal(interaction) {
 
   if (interaction.customId === MODAL.tokenSettings) {
     const ppt = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.pointsPerToken).trim(), 10);
-    const dmin = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.demotionMin).trim(), 10);
-    const dmax = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.demotionMax).trim(), 10);
-    const nmin = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.normalMin).trim(), 10);
-    const nmax = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.normalMax).trim(), 10);
-    const pmin = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.promotionMin).trim(), 10);
-    const pmax = parseInt(interaction.fields.getTextInputValue(MODAL_FIELD.promotionMax).trim(), 10);
+
+    const demotionRaw = interaction.fields.getTextInputValue(MODAL_FIELD.demotionRange).trim();
+    const normalRaw = interaction.fields.getTextInputValue(MODAL_FIELD.normalRange).trim();
+    const promotionRaw = interaction.fields.getTextInputValue(MODAL_FIELD.promotionRange).trim();
+
+    const parseRange = (raw) => {
+      const parts = raw.split(/[-\u2013\u2014]/).map((s) => s.trim());
+      if (parts.length !== 2) return [NaN, NaN];
+      return [parseInt(parts[0], 10), parseInt(parts[1], 10)];
+    };
+
+    const [dmin, dmax] = parseRange(demotionRaw);
+    const [nmin, nmax] = parseRange(normalRaw);
+    const [pmin, pmax] = parseRange(promotionRaw);
 
     if ([ppt, dmin, dmax, nmin, nmax, pmin, pmax].some((v) => Number.isNaN(v))) {
-      await safeReply(interaction, '\u274C All fields must be valid numbers.');
+      await safeReply(interaction, '\u274C All fields must be valid numbers. Use the format "min - max" for ranges.');
       return;
     }
     if (ppt <= 0) { await safeReply(interaction, '\u274C **Points Required Per Token** must be greater than 0.'); return; }
@@ -901,6 +928,47 @@ export async function handleQuestModal(interaction) {
       components: buildMainButtons(),
     });
     await safeReply(interaction, '\u2705 Daily message settings saved.');
+    return;
+  }
+
+  if (interaction.customId === MODAL.leaderboardAppearance) {
+    const colorRaw = interaction.fields.getTextInputValue(MODAL_FIELD.leaderboardColor).trim();
+    const imageUrlRaw = interaction.fields.getTextInputValue(MODAL_FIELD.leaderboardImageUrl).trim();
+
+    const cfg = await getQuestConfig(guildId);
+    if (!cfg) { await safeReply(interaction, '\u274C Database error.'); return; }
+    let color = cfg.leaderboardColor ?? 0x2B6CB0;
+
+    if (colorRaw) {
+      const cleaned = colorRaw.replace(/^#/, '').replace(/^0x/, '');
+      if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) {
+        await safeReply(interaction, '\u274C Color must be a valid 6-digit hex (e.g. 2B6CB0).');
+        return;
+      }
+      color = parseInt(cleaned, 16);
+    }
+
+    const update = { leaderboardColor: color };
+    if (imageUrlRaw) {
+      try { new URL(imageUrlRaw); } catch {
+        await safeReply(interaction, '\u274C Image URL is not a valid URL.');
+        return;
+      }
+      update.leaderboardImageUrl = imageUrlRaw;
+    } else {
+      update.leaderboardImageUrl = '';
+    }
+
+    const updated = await saveQuestConfig(guildId, update);
+    if (!updated) { await safeReply(interaction, '\u274C Failed to save leaderboard appearance.'); return; }
+
+    await updateLeaderboard(interaction.client, guildId);
+
+    await safeUpdate(interaction, {
+      embeds: [buildLeaderboardEmbed(updated)],
+      components: buildLeaderboardComponents(),
+    });
+    await safeReply(interaction, '\u2705 Leaderboard appearance saved.');
     return;
   }
   await safeReply(interaction, '\u274C Unknown form submission.');
