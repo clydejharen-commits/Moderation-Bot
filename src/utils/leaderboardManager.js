@@ -21,12 +21,18 @@ async function getLeaderboardData(guildId, cfg) {
 
 function buildLeaderboardEmbed(staffMembers, cfg) {
   const text = buildLeaderboardText(staffMembers, cfg);
-  return new EmbedBuilder()
-    .setTitle('\u{1F3C6} Staff Leaderboard')
-    .setColor(0x2B6CB0)
+  const color = cfg?.leaderboardColor ?? 0x2B6CB0;
+  const imageUrl = cfg?.leaderboardImageUrl || undefined;
+  const embed = new EmbedBuilder()
+    .setTitle('\u{1F3A9} Leaderboard')
+    .setColor(color)
     .setDescription(text.slice(0, 4000))
     .setFooter({ text: `Total staff: ${staffMembers.length}` })
     .setTimestamp();
+  if (imageUrl) {
+    embed.setImage(imageUrl);
+  }
+  return embed;
 }
 
 export async function updateLeaderboard(client, guildId) {

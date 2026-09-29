@@ -29,6 +29,8 @@ const questConfigSchema = new Schema(
     // Leaderboard
     leaderboardChannelId: { type: String, default: '' },
     leaderboardMessageId: { type: String, default: '' },
+    leaderboardColor: { type: Number, default: 0x2B6CB0 },
+    leaderboardImageUrl: { type: String, default: '' },
   },
   { timestamps: true },
 );

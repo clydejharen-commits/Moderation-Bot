@@ -180,16 +180,15 @@ export function buildLeaderboardText(staffMembers, cfg) {
   const lines = sorted.map((sm, i) => {
     const rank = i + 1;
     const mention = `<@${sm.userId}>`;
-    const id = `(${sm.userId})`;
     const messages = `${sm.dailyMessageCount ?? 0}/${required}`;
     const status = statusLabel(sm.status);
     const points = sm.totalPoints ?? 0;
     const token = sm.token ?? 0;
 
-    return `${rank}. ${mention} ${id}\nMessages: ${messages}\nStatus: ${status}\nPoints: ${points}\nToken: ${token}`;
+    return `${rank}. ${mention}\n- Status: ${status}\n\ud83d\udcac Messages: ${messages}\n\u25fc\ufe0f Points: ${points}\n\u2663\ufe0f Token: ${token}`;
   });
 
-  return `\u{1F3C6} Staff Leaderboard\n\n${lines.join('\n\n')}`.slice(0, 4000);
+  return `\u{1F3A9} Leaderboard\n\n${lines.join('\n\n')}`.slice(0, 4000);
 }
 
 export async function getTrackedUserIds(guild, cfg) {
