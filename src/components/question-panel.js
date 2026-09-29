@@ -64,107 +64,203 @@ export function buildResultsEmbed(question) {
 
   if (answers.length > 0) {
     const answerList = answers
-      .map((a, i) => `**${i + 1}.** <@${a.userId}>: ${a.text}`)
-      .join('\n');
-    embed.addFields({ name: '\u{1F4DD} Answers', value: answerList.slice(0, 1024) });
+      .map((a) => `**<@${a.userId}> (${a.username}):**\n${a.answer}`)
+      .join('\n\n');
+    embed.addFields({ name: `\u{1F4DD} Submitted Answers (${answers.length})`, value: answerList.slice(0, 1024) });
   } else {
-    embed.addFields({ name: '\u{1F4DD} Answers', value: 'No answers submitted.' });
+    embed.addFields({ name: '\u{1F4DD} Submitted Answers', value: 'No answers were submitted.' });
   }
 
   if (missingIds.length > 0) {
     const missingList = missingIds.map((id) => `<@${id}>`).join(', ');
-    embed.addFields({ name: '\u{274C} Missing', value: missingList.slice(0, 1024) });
+    embed.addFields({ name: `\u274C Did Not Answer (${missingIds.length})`, value: missingList.slice(0, 1024) });
+  } else if (answers.length > 0) {
+    embed.addFields({ name: '\u2705 Did Not Answer', value: 'All eligible trainees answered!' });
   }
 
   return embed;
 }
 
 export async function handleQuestionButton(interaction) {
-  if (interaction.customId !== ANSWER_BUTTON_ID) return;
+  const guild = interaction.guild;
+  const member = interaction.member;
+
+  let activeQuestion;
+  try {
+    activeQuestion = await ActiveQuestion.findOne({
+      guildId: guild.id,
+      completed: false,
+    }).lean();
+  } catch (err) {
+    console.error('[QUESTION PANEL] Failed to fetch active question:', err.message);
+    await interaction.reply({ content: '\u274C Database error. Please try again later.', ephemeral: true });
+    return;
+  }
+
+  if (!activeQuestion) {
+    await interaction.reply({ content: '\u274C There is no active question right now.', ephemeral: true });
+    return;
+  }
+
+  const eligibleIds = activeQuestion.eligibleTraineeIds || [];
+  if (!eligibleIds.includes(member.id)) {
+    await interaction.reply({ content: '\u274C You are not assigned as a trainee for this question.', ephemeral: true });
+    return;
+  }
+
+  const hasAnswered = (activeQuestion.answers || []).some((a) => a.userId === member.id);
+  if (hasAnswered) {
+    await interaction.reply({ content: '\u274C You have already answered this question.', ephemeral: true });
+    return;
+  }
 
   const modal = new ModalBuilder()
     .setCustomId(ANSWER_MODAL_ID)
-    .setTitle('Answer Question');
+    .setTitle('Answer the Question');
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId(ANSWER_FIELD_ID)
-        .setLabel('Your Answer')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(1000),
-    ),
-  );
+  const answerInput = new TextInputBuilder()
+    .setCustomId(ANSWER_FIELD_ID)
+    .setLabel('Your Answer')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(2000)
+    .setPlaceholder('Type your answer here...');
+
+  modal.addComponents(new ActionRowBuilder().addComponents(answerInput));
 
   try {
     await interaction.showModal(modal);
   } catch (err) {
-    console.error('[QUESTION] Failed to show answer modal:', err.message);
+    console.error('[QUESTION PANEL] Failed to show answer modal:', err.message);
+    await interaction.reply({ content: '\u274C Failed to open the answer form. Please try again.', ephemeral: true }).catch(() => {});
   }
 }
 
 export async function handleQuestionModal(interaction) {
-  const answerText = interaction.fields.getTextInputValue(ANSWER_FIELD_ID).trim();
+  const guild = interaction.guild;
+  const member = interaction.member;
 
-  let question;
+  const answerText = interaction.fields.getTextInputValue(ANSWER_FIELD_ID).trim();
+  if (!answerText) {
+    await interaction.reply({ content: '\u274C Your answer cannot be empty.', ephemeral: true });
+    return;
+  }
+
+  let activeQuestion;
   try {
-    question = await ActiveQuestion.findOne({
-      guildId: interaction.guild.id,
+    activeQuestion = await ActiveQuestion.findOne({
+      guildId: guild.id,
       completed: false,
     });
   } catch (err) {
-    console.error('[QUESTION] Failed to fetch active question:', err.message);
-    await interaction.reply({ content: '\u274C Failed to fetch the active question. Please try again later.', ephemeral: true });
+    console.error('[QUESTION PANEL] Failed to fetch active question for modal:', err.message);
+    await interaction.reply({ content: '\u274C Database error. Please try again later.', ephemeral: true });
     return;
   }
 
-  if (!question) {
-    await interaction.reply({ content: '\u274C No active question found.', ephemeral: true });
+  if (!activeQuestion) {
+    await interaction.reply({ content: '\u274C There is no active question right now.', ephemeral: true });
     return;
   }
 
-  const cfg = await getQuestConfig(interaction.guild.id);
-  if (!cfg) {
-    await interaction.reply({ content: '\u274C Failed to load Quest configuration.', ephemeral: true });
+  const eligibleIds = activeQuestion.eligibleTraineeIds || [];
+  if (!eligibleIds.includes(member.id)) {
+    await interaction.reply({ content: '\u274C You are not assigned as a trainee for this question.', ephemeral: true });
     return;
   }
 
-  const eligibleIds = await resolveTraineeUserIds(interaction.guild, cfg);
-  if (!eligibleIds.includes(interaction.user.id)) {
-    await interaction.reply({ content: '\u274C Only trainees can answer this question.', ephemeral: true });
+  const hasAnswered = (activeQuestion.answers || []).some((a) => a.userId === member.id);
+  if (hasAnswered) {
+    await interaction.reply({ content: '\u274C You have already answered this question.', ephemeral: true });
     return;
   }
 
-  const existingAnswer = question.answers?.find((a) => a.userId === interaction.user.id);
-  if (existingAnswer) {
-    existingAnswer.text = answerText;
-  } else {
-    if (!question.answers) question.answers = [];
-    question.answers.push({ userId: interaction.user.id, text: answerText });
+  activeQuestion.answers.push({
+    userId: member.id,
+    username: member.user.username,
+    answer: answerText,
+    answeredAt: new Date(),
+  });
+
+  const allAnswered = activeQuestion.eligibleTraineeIds.every(
+    (id) => activeQuestion.answers.some((a) => a.userId === id),
+  );
+
+  if (allAnswered) {
+    activeQuestion.completed = true;
   }
 
   try {
-    await question.save();
+    await activeQuestion.save();
   } catch (err) {
-    console.error('[QUESTION] Failed to save answer:', err.message);
-    await interaction.reply({ content: '\u274C Failed to save your answer. Please try again later.', ephemeral: true });
+    console.error('[QUESTION PANEL] Failed to save answer:', err.message);
+    await interaction.reply({ content: '\u274C Failed to submit your answer. Please try again later.', ephemeral: true });
     return;
   }
 
-  try {
-    const channel = await interaction.guild.channels.fetch(question.channelId).catch(() => null);
-    if (channel) {
-      const embed = buildQuestionEmbed(question);
+  await interaction.reply({ content: '\u2705 Your answer has been submitted.', ephemeral: true });
+
+  if (allAnswered) {
+    await endQuestionInChannel(interaction, activeQuestion);
+  } else {
+    try {
+      const embed = buildQuestionEmbed(activeQuestion.toObject());
       const buttons = buildQuestionButtons();
-      const msg = await channel.messages.fetch(question.messageId).catch(() => null);
-      if (msg) {
-        await msg.edit({ embeds: [embed], components: buttons });
+      if (interaction.message) {
+        await interaction.message.edit({ embeds: [embed], components: buttons });
       }
+    } catch (err) {
+      console.error('[QUESTION PANEL] Failed to update question message:', err.message);
+    }
+  }
+}
+
+export async function endQuestionInChannel(interaction, question) {
+  const embed = buildResultsEmbed(question.toObject ? question.toObject() : question);
+
+  try {
+    if (interaction.message) {
+      await interaction.message.edit({ embeds: [embed], components: [] });
+    } else {
+      await interaction.channel.send({ embeds: [embed] });
     }
   } catch (err) {
-    console.error('[QUESTION] Failed to update question message:', err.message);
+    console.error('[QUESTION PANEL] Failed to post question results:', err.message);
+    try {
+      await interaction.channel.send({ embeds: [embed] });
+    } catch {
+      // channel may be unavailable
+    }
+  }
+}
+
+export async function endQuestionFromCommand(interaction) {
+  const guild = interaction.guild;
+
+  let activeQuestion;
+  try {
+    activeQuestion = await ActiveQuestion.findOne({
+      guildId: guild.id,
+      completed: false,
+    });
+  } catch (err) {
+    console.error('[QUESTION END] Failed to fetch active question:', err.message);
+    return null;
   }
 
-  await interaction.reply({ content: '\u2705 Your answer has been recorded.', ephemeral: true });
+  if (!activeQuestion) {
+    return null;
+  }
+
+  activeQuestion.completed = true;
+  try {
+    await activeQuestion.save();
+  } catch (err) {
+    console.error('[QUESTION END] Failed to mark question as completed:', err.message);
+    return null;
+  }
+
+  return activeQuestion.toObject();
 }
+
+export { ANSWER_BUTTON_ID, ANSWER_MODAL_ID, ANSWER_FIELD_ID };
